@@ -53,6 +53,21 @@ local function GetOptions()
                         get = function() return BugLab.db.profile.reloadHotkey end,
                         set = function(_, v) BugLab.db.profile.reloadHotkey = v end,
                     },
+                    historyDays = {
+                        type = "range", order = 4, width = "double", min = 1, max = 365, step = 1,
+                        name = L["OPT_HISTORY"], desc = L["OPT_HISTORY_DESC"],
+                        get = function() return BugLab.db.profile.historyDays end,
+                        set = function(_, v)
+                            BugLab.db.profile.historyDays = v
+                            BugLab:PruneHistory()
+                        end,
+                    },
+                    logRateLimit = {
+                        type = "range", order = 5, width = "double", min = 0, max = 200, step = 5,
+                        name = L["OPT_RATE"], desc = L["OPT_RATE_DESC"],
+                        get = function() return BugLab.db.profile.logRateLimit end,
+                        set = function(_, v) BugLab.db.profile.logRateLimit = v end,
+                    },
                     minimap = {
                         type = "toggle", order = 2, width = "full",
                         name = L["OPT_MINIMAP"], desc = L["OPT_MINIMAP_DESC"],

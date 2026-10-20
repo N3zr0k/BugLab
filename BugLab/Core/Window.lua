@@ -5,7 +5,9 @@ local BugLab = _G.BugLab
 local L = BugLab.L
 local C = BugLab.COLORS
 
-local WIDTH, HEIGHT = 780, 500
+local WIDTH, HEIGHT = 850, 500
+local MIN_WIDTH, MIN_HEIGHT, MAX_WIDTH, MAX_HEIGHT = 850, 360, 1500, 950
+local GRIP_INSET = 8
 local TAB_SIZE, TAB_GAP = 52, 10 -- Fallback-Reiter ohne Atlanten
 local ICON_INSET = 6
 
@@ -36,6 +38,7 @@ local FRAME = {
               disabled = "RedButton-Exit-Disabled", highlight = "RedButton-Highlight" },
     closeSize = 28.5, closeX = 1.5, closeY = 3.5,
 }
+local PLAIN_TOPLEFT = "UI-Frame-Metal-CornerTopLeft" -- ohne Portrait, für Popups
 local LOGO_SIZE, LOGO_DX, LOGO_DY = 52.5, -9.5, 11 -- relativ zur Mitte der Portraitecke
 local TITLE_Y, TAGLINE_DY = -3, -18 -- Name mittig in der Titelzeile, Beschreibung darunter
 local CONTENT_TOP, CONTENT_SIDE, CONTENT_BOTTOM = 74, 17, 40 -- eine Zeile Abstand unter der Beschreibung
@@ -179,13 +182,17 @@ end
 
 local function SavePosition(window)
     local point, _, relPoint, x, y = window:GetPoint()
-    BugLab.db.profile.window = { point = point, relPoint = relPoint, x = x, y = y }
+    BugLab.db.profile.window = {
+        point = point, relPoint = relPoint, x = x, y = y,
+        width = window:GetWidth(), height = window:GetHeight(),
+    }
 end
 
 local function RestorePosition(window)
     local pos = BugLab.db.profile.window
     window:ClearAllPoints()
     if pos then
+        if pos.width and pos.height then window:SetSize(math.max(pos.width, MIN_WIDTH), math.max(pos.height, MIN_HEIGHT)) end
         window:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
     else
         window:SetPoint("CENTER")
@@ -203,7 +210,7 @@ local function AtlasesAvailable()
 end
 
 -- Metallrahmen aus Spielgrafiken. Gibt die Portraitecke zurück (Bezug für das Logo).
-local function BuildMetalFrame(window)
+local function BuildMetalFrame(window, plain)
     local function Tex(layer, sublevel)
         local tex = window:CreateTexture(nil, layer, nil, sublevel)
         if DESATURATE then tex:SetDesaturated(true) end
@@ -229,7 +236,7 @@ local function BuildMetalFrame(window)
     local corners = {}
     for key, c in pairs(FRAME.corners) do
         local tex = Tex("OVERLAY", 2)
-        tex:SetAtlas(c[1], true)
+        tex:SetAtlas(plain and key == "tl" and PLAIN_TOPLEFT or c[1], true)
         tex:SetPoint(c[2], window, c[2], c[3], c[4])
         corners[key] = tex
     end
@@ -254,6 +261,15 @@ local function BuildFlatFrame(window)
     Fill(window, "BACKGROUND", 0.02, 0.02, 0.02, 0.96):SetAllPoints()
     AddBorder(window)
     SetBorderColor(window, C.DARKGRAY_COLOR)
+end
+
+-- Rahmen im Stil des Hauptfensters für Popups (ohne Portrait); fehlen die Atlanten, bleibt eine flache Fläche.
+function BugLab:SkinFrame(frame)
+    if AtlasesAvailable() and C_Texture.GetAtlasInfo(PLAIN_TOPLEFT) then
+        BuildMetalFrame(frame, true)
+    else
+        BuildFlatFrame(frame)
+    end
 end
 
 -- Logo in der Portraitecke, hinter dem Ring der Ecke, auf einer dunklen Kreisfläche.
@@ -292,6 +308,87 @@ local function BuildCloseButton(window, skinned)
         label:SetPoint("CENTER")
         label:SetText("X")
     end
+    return close
+end
+
+-- Symbole links neben dem Schließen-Knopf (Zahnrad, BugSack): flach in der Titelzeile wie die Leiste eines
+-- macOS-Fensters, ohne Kasten. Grau, beim Überfahren in BugLab-Blau.
+local HEADER = { size = 16, gap = 8, scale = 1.25, gear = "Interface\\WorldMap\\GEAR_64GREY" }
+
+local function BuildHeaderIcon(window, anchor, gap, texture, tooltip, onClick)
+    local button = CreateFrame("Button", nil, window)
+    button:SetSize(HEADER.size, HEADER.size)
+    button:SetScale(HEADER.scale)
+    button:SetPoint("RIGHT", anchor, "LEFT", -gap, 0)
+    button:SetFrameLevel(window:GetFrameLevel() + 30)
+    local icon = button:CreateTexture(nil, "OVERLAY")
+    icon:SetAllPoints()
+    icon:SetDesaturated(true)
+    button.icon = icon
+
+    local function Paint(hover)
+        icon:SetVertexColor(unpack(hover and C.BRIGHTBLUE_FONT_COLOR or C.LIGHTGRAY_FONT_COLOR))
+    end
+    Paint(false)
+    if texture then icon:SetTexture(texture) end
+    button:SetScript("OnEnter", function(self)
+        Paint(true)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        tooltip(GameTooltip)
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function() Paint(false); GameTooltip:Hide() end)
+    button:SetScript("OnMouseDown", function() icon:SetPoint("TOPLEFT", 1, -1); icon:SetPoint("BOTTOMRIGHT", 1, -1) end)
+    button:SetScript("OnMouseUp", function() icon:ClearAllPoints(); icon:SetAllPoints() end)
+    button:SetScript("OnClick", onClick)
+    return button
+end
+
+-- Das Zahnrad öffnet die Einstellungen; der BugSack-Absprung (Icon von BugSack, Fehleranzahl im Tooltip) ist nur
+-- sichtbar, wenn BugSack installiert ist.
+local function BuildHeaderIcons(window, close)
+    local gear = BuildHeaderIcon(window, close, HEADER.gap, HEADER.gear,
+        function(tip) tip:SetText(L["OPEN_OPTIONS"]) end,
+        function() BugLab:OpenOptions() end)
+    window.settingsButton = gear
+
+    local sack = BuildHeaderIcon(window, gear, HEADER.gap, nil,
+        function(tip)
+            tip:SetText(L["OPEN_BUGSACK"])
+            local count = BugLab:GetBugSackCount()
+            if count and count > 0 then
+                tip:AddLine(L["BUGSACK_COUNT"]:format(count), 1, 0.35, 0.3)
+            elseif count then
+                tip:AddLine(L["BUGSACK_NONE"], 0.6, 0.6, 0.6)
+            end
+        end,
+        function() BugLab:OpenBugSack() end)
+    sack:Hide()
+    window.bugSackButton = sack
+end
+
+-- Größenänderung: Griff unten rechts wie bei den Chatfenstern, Größe wird mit der Position gespeichert.
+local function BuildResizeGrip(window)
+    window:SetResizable(true)
+    if window.SetResizeBounds then
+        window:SetResizeBounds(MIN_WIDTH, MIN_HEIGHT, MAX_WIDTH, MAX_HEIGHT)
+    else
+        window:SetMinResize(MIN_WIDTH, MIN_HEIGHT)
+        window:SetMaxResize(MAX_WIDTH, MAX_HEIGHT)
+    end
+    local grip = CreateFrame("Button", nil, window)
+    grip:SetSize(16, 16)
+    grip:SetPoint("BOTTOMRIGHT", -GRIP_INSET, GRIP_INSET)
+    grip:SetFrameLevel(window:GetFrameLevel() + 30)
+    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    grip:SetScript("OnMouseDown", function() window:StartSizing("BOTTOMRIGHT") end)
+    grip:SetScript("OnMouseUp", function()
+        window:StopMovingOrSizing()
+        SavePosition(window)
+    end)
+    window.grip = grip
 end
 
 function BugLab:CreateWindow()
@@ -318,7 +415,8 @@ function BugLab:CreateWindow()
     else
         BuildFlatFrame(window)
     end
-    BuildCloseButton(window, skinned)
+    BuildHeaderIcons(window, BuildCloseButton(window, skinned))
+    BuildResizeGrip(window)
 
     local title = window:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, TITLE_Y)
@@ -359,6 +457,7 @@ end
 function BugLab:RefreshWindow()
     local window = self.window
     if not window then return end
+    self:UpdateBugSackButton()
 
     local visible = self:GetVisibleModules()
     for _, tab in pairs(window.tabs) do tab:Hide() end

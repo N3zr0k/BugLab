@@ -1,12 +1,19 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\FrameXML\UI.xsd">
 	<!-- Ladereihenfolge ist relevant: Libs -> Locales -> Core -> Rest -->
+	<Script file="Core\Snapshot.lua"/>
 	<Include file="Libs.xml"/>
 	<Script file="Locales\enUS.lua"/>
 	<Script file="Locales\deDE.lua"/>
 	<Script file="Core\Core.lua"/>
 	<Script file="Core\Reload.lua"/>
+	<Script file="Core\UI.lua"/>
 	<Script file="Core\Window.lua"/>
 	<Script file="Core\API\Window.lua"/>
+	<Script file="Core\API\Filter.lua"/>
+	<Script file="Core\API\Dump.lua"/>
+	<Script file="Core\API\Inspect.lua"/>
+	<Script file="Core\API\Log.lua"/>
+	<Script file="Core\Integrations\BugSack.lua"/>
 	<Script file="Core\Launcher\Minimap.lua"/>
 	<Script file="Core\Launcher\Compartment.lua"/>
 	<Script file="Core\Options.lua"/>

@@ -1,4 +1,10 @@
+<p align="center">
+  <img src="documentation/assets/BugLab_Header_hell.png" alt="BugLab: Debugging Toolkit for WoW Forever">
+</p>
+
 # {BugLab}
+
+[![latest](https://img.shields.io/github/v/release/N3zr0k/BugLab?include_prereleases&sort=date&label=latest)](https://github.com/N3zr0k/BugLab/releases) [![last push](https://img.shields.io/github/last-commit/N3zr0k/BugLab/main?label=last%20push)](https://github.com/N3zr0k/BugLab/commits/main) [![CI](https://img.shields.io/github/actions/workflow/status/N3zr0k/BugLab/ci.yml?branch=main&label=CI)](https://github.com/N3zr0k/BugLab/actions/workflows/ci.yml)
 
 BugLab ist ein modulares Debugging- und Analysewerkzeug für World-of-Warcraft-Addon-Entwickler (WoW Forever / Classic-Beta-Client).
 

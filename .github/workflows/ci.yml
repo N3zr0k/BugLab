@@ -1,0 +1,129 @@
+# CI/CD für BugLab: Lint -> Tests -> ZIP -> Release (+ CurseForge ab beta).
+# Release-Stufe aus der TOC-Version (x.y.z-stufe.N):
+#   alpha   -> GitHub-Prerelease, kein CurseForge
+#   beta    -> GitHub-Release (Beta) und CurseForge-Beta
+#   (keine) -> GitHub-Release und CurseForge-Release
+# Benötigt: Secret CURSEFORGE_API_TOKEN, Repository-Variable CURSEFORGE_GAME_VERSION_ID (Spielversions-ID der Forever-Beta).
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+env:
+  ADDON: BugLab
+  CURSEFORGE_PROJECT_ID: "1755124"
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.toc.outputs.version }}
+      stage: ${{ steps.toc.outputs.stage }}
+    steps:
+      - uses: actions/checkout@v4
+      # Die TOC ist die einzige Quelle der Version.
+      - id: toc
+        run: |
+          VERSION=$(sed -n 's/^## Version:[[:space:]]*//p' "$ADDON/$ADDON.toc" | tr -d '\r')
+          test -n "$VERSION" || { echo "Keine Version in der TOC"; exit 1; }
+          case "$VERSION" in
+            *-alpha.*) STAGE=alpha ;;
+            *-beta.*)  STAGE=beta ;;
+            *-*)       echo "Unbekannte Stufe in $VERSION"; exit 1 ;;
+            *)         STAGE=release ;;
+          esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lunarmodules/luacheck@v1
+        with:
+          args: BugLab tests --codes
+
+  # Logiktests mit simuliertem WoW-Client (tests/run_addon.py), enUS und deDE.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install lupa
+      - run: python3 -I tests/run_addon.py
+
+  # Addon-ZIP für Spieler: ein Wurzelordner BugLab/, ohne Repo-Dateien.
+  package:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: zip -qr "${ADDON}_${{ needs.version.outputs.version }}.zip" "$ADDON" -x "*/.git*" "*__pycache__*"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: addon-zip
+          path: "*.zip"
+
+  # Tag + Release, nur auf dem Standardbranch und nur, wenn die TOC-Version neu ist.
+  release:
+    needs: [version, lint, test, package]
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      created: ${{ steps.release.outputs.created }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      STAGE: ${{ needs.version.outputs.stage }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: addon-zip
+      - id: release
+        run: |
+          TAG="v$VERSION"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG existiert bereits, nichts zu tun."
+            echo "created=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Release-Beschreibung = Abschnitt der Version aus dem CHANGELOG
+          awk -v v="## $VERSION" '$0 ~ "^## " { p = ($0 == v) } p && $0 != v' CHANGELOG.md > notes.md
+          TITLE="$ADDON $VERSION"
+          FLAGS=""
+          [ "$STAGE" = "alpha" ] && FLAGS="--prerelease" && TITLE="$TITLE (Prerelease)"
+          [ "$STAGE" = "beta" ] && TITLE="$TITLE (Beta)"
+          gh release create "$TAG" "${ADDON}_${VERSION}.zip" --target "$GITHUB_SHA" --title "$TITLE" --notes-file notes.md $FLAGS
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+  # CurseForge: nur beta und final, nur wenn dieser Lauf ein neues Release erstellt hat.
+  curseforge:
+    needs: [version, release]
+    if: needs.release.outputs.created == 'true' && needs.version.outputs.stage != 'alpha'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      STAGE: ${{ needs.version.outputs.stage }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: addon-zip
+      - env:
+          CURSEFORGE_API_TOKEN: ${{ secrets.CURSEFORGE_API_TOKEN }}
+          GAME_VERSION_ID: ${{ vars.CURSEFORGE_GAME_VERSION_ID }}
+        run: |
+          test -n "$CURSEFORGE_API_TOKEN" && test -n "$GAME_VERSION_ID" || { echo "CurseForge-Zugangsdaten fehlen"; exit 1; }
+          NOTES=$(awk -v v="## $VERSION" '$0 ~ "^## " { p = ($0 == v) } p && $0 != v' CHANGELOG.md)
+          TYPE=release; [ "$STAGE" = "beta" ] && TYPE=beta
+          jq -n --arg notes "$NOTES" --arg name "$ADDON $VERSION" --arg type "$TYPE" --argjson gv "$GAME_VERSION_ID" \
+            '{changelog:$notes, changelogType:"markdown", displayName:$name, gameVersions:[$gv], releaseType:$type}' > metadata.json
+          curl -fsS --request POST --header "X-Api-Token: $CURSEFORGE_API_TOKEN" \
+               --form "metadata=<metadata.json" --form "file=@${ADDON}_${VERSION}.zip" \
+               "https://wow.curseforge.com/api/projects/$CURSEFORGE_PROJECT_ID/upload-file"

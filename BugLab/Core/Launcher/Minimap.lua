@@ -80,6 +80,11 @@ function BugLab:FillLauncherTooltip(tooltip, withDragHint)
         tooltip:AddLine(" ")
         self:AddInfoLine(tooltip, L["LAUNCHER_RELOAD"])
     end
+    local inspector = self:GetModule("Inspector", true)
+    if inspector and inspector:IsEnabled() then
+        if not self.db.profile.reloadHotkey then tooltip:AddLine(" ") end
+        self:AddInfoLine(tooltip, L["LAUNCHER_INSPECT"])
+    end
 end
 
 -- Der Rahmen von LibDBIcon ist eine Spielgrafik (MiniMap-TrackingBorder); nur die Farbe wird entfernt.

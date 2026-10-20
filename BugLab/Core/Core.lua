@@ -16,7 +16,7 @@ BugLab.COLORS = {
 }
 
 -- Dieselbe Palette als Hex für Farbcodes in Texten: BugLab:Paint("BRIGHTBLUE", "Text").
-local HEX = { BRIGHTBLUE = "66bbff", LIGHTGRAY = "999999", GRAY = "808080", DARKGRAY = "404040", WHITE = "ffffff" }
+local HEX = { BRIGHTBLUE = "66bbff", LIGHTGRAY = "999999", GRAY = "808080", DARKGRAY = "404040", WHITE = "ffffff", ERROR = "ff4040" }
 function BugLab:Paint(color, text)
     return "|cff" .. HEX[color] .. text .. "|r"
 end
@@ -34,9 +34,12 @@ local DB_DEFAULTS = {
     profile = {
         debug = false,
         reloadHotkey = true,
+        historyDays = 30, -- Aufbewahrung der Console-Historie
+        logRateLimit = 30, -- Zeilen pro Sekunde und Quelle, 0 = keine Drosselung
         modules = { Console = true, Inspector = true, Probe = true },
         minimap = { hide = false, minimapPos = 180 }, -- Format von LibDBIcon
     },
+    global = { history = {} }, -- Console-Historie, profilübergreifend
 }
 
 -- Version und Infos kommen aus der TOC, nicht aus dem Code.
@@ -89,6 +92,8 @@ function BugLab:OnInitialize()
     self.db.RegisterCallback(self, "OnProfileCopied", "OnProfileChanged")
     self.db.RegisterCallback(self, "OnProfileReset", "OnProfileChanged")
 
+    self:FlushPendingLog()
+    self:PruneHistory()
     self:SetupOptions()
     self:SetupCommands()
 end

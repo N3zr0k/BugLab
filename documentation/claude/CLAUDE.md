@@ -33,7 +33,7 @@ Diese Datei gibt Claude Code Orientierung für die Arbeit in diesem Repository.
     - `Libs.xml` – lädt alle Libraries; neue Libs nur hier eintragen
     - `Libs/` – eingebundene Libraries (Ace3 unter `Libs/Ace3`, weitere wie HereBeDragons, LibQTip …); nicht bearbeiten
     - `Locales/` – eine Datei pro Sprache (`deDE`, `enUS`); neue Texte immer in beiden Dateien
-    - `Core/` – alle Lua-Dateien des Addons außer Locales und Modulen (`Core.lua`, `Options.lua`, `Commands.lua`); Unterordner `Core/API/` enthält alle APIs; `Core/Launcher/` enthält die Einstiegspunkte (Minimap-Button, Addon-Menü)
+    - `Core/` – alle Lua-Dateien des Addons außer Locales und Modulen (`Core.lua`, `Options.lua`, `Commands.lua`); Unterordner `Core/API/` enthält alle APIs; `Core/Launcher/` enthält die Einstiegspunkte (Minimap-Button, Addon-Menü), `Core/Integrations/` die Anbindungen an andere Addons (z. B. BugSack)
     - `<Core.lua>` – Initialisierung, Addon-Objekt, gemeinsame Helfer (Debug, ID-/Methodenprüfung)
     - `<Options.lua>` – Einstellungen mit den Tabs Übersicht, Allgemein, Profile
     - `<Commands.lua>` – Slash-Befehle; neue Befehle hier ergänzen
