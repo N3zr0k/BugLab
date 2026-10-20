@@ -33,11 +33,12 @@ Diese Datei gibt Claude Code Orientierung für die Arbeit in diesem Repository.
     - `Libs.xml` – lädt alle Libraries; neue Libs nur hier eintragen
     - `Libs/` – eingebundene Libraries (Ace3 unter `Libs/Ace3`, weitere wie HereBeDragons, LibQTip …); nicht bearbeiten
     - `Locales/` – eine Datei pro Sprache (`deDE`, `enUS`); neue Texte immer in beiden Dateien
+    - `Core/` – alle Lua-Dateien des Addons außer Locales und Modulen (`Core.lua`, `Options.lua`, `Commands.lua`); Unterordner `Core/API/` enthält alle APIs; `Core/Launcher/` enthält die Einstiegspunkte (Minimap-Button, Addon-Menü)
     - `<Core.lua>` – Initialisierung, Addon-Objekt, gemeinsame Helfer (Debug, ID-/Methodenprüfung)
     - `<Options.lua>` – Einstellungen mit den Tabs Übersicht, Allgemein, Profile
     - `<Commands.lua>` – Slash-Befehle; neue Befehle hier ergänzen
-    - `<Modules/>` – interne Module
-    - `Media/` – selbst gezeichnete Icons (TGA), keine Blizzard-Grafiken
+    - `<Modules/>` – interne Module, jedes Modul in einem eigenen Ordner (`Modules/Console/`, `Modules/Inspector/`, `Modules/Probe/`)
+    - `Media/` – selbst gezeichnete Icons (TGA); Blizzard-Artwork wird nicht hineinkopiert
 - `.github/workflows/` – CI: Lint, ZIP-Build, Release und CurseForge-Upload
 - `README.md` – Nutzer-Doku (ausführlich)
 - `CHANGELOG.md` – eine Zeile pro Änderung
@@ -56,6 +57,8 @@ Diese Datei gibt Claude Code Orientierung für die Arbeit in diesem Repository.
 - `z` → Fix (zählt mit jedem neuen Repo Zip hoch, wenn sich am Addon Game Ordner etwas ändert)
 - `alpha` → alpha, beta (wird nur von mir freigegeben und angesagt)
 - `N` → Repo (zählt mit jedem neuen Repo Zip hoch, wenn sich am Repo Ordner etwas ändert, GameOrdner ist ausgenommen)
+- Aufbau des Repo-ZIPs: ein Wurzelordner `BugLab/` mit dem gesamten Repo (README, CHANGELOG, `documentation/`, `tests/`, LICENSE, `.pkgmeta`) und darin der Addon-Ordner `BugLab/BugLab/`. Nichts liegt lose im Archiv-Root.
+- TOC-Vorgaben: `## SavedVariables: BugLabSettings`, `## Category: Development Tools` (nur deDE als Übersetzung), `## X-Curse-Project-ID: 1755124`, `## X-Website: https://github.com/N3zr0k/BugLab`, `## X-License: MIT`.
 
 ## Befehle / Release
 - Lint: `<Lint-Befehl eintragen>`
@@ -71,7 +74,7 @@ Diese Datei gibt Claude Code Orientierung für die Arbeit in diesem Repository.
 
 ## Architektur
 - Ace3 liegt lokal unter `Libs/Ace3`; geladen über `Libs.xml`. 
-- Zusätzlich getestete Libraries (laufen im Forever-Client): HereBeDragons-2.0, LibSerialize, LibDeflate, CallbackHandler-1.0, LibQTip-1.0.
+- Zusätzlich getestete Libraries (laufen im Forever-Client): HereBeDragons-2.0, LibSerialize, LibDeflate, CallbackHandler-1.0, LibQTip-1.0, LibDataBroker-1.1, LibDBIcon-1.0.
 - Erweiterungsmodell: intern als Modul oder extern als eigenes Addon (Prinzip wie bei Scrap/DBM).
 - Addon-Infos (Version etc.) werden aus der TOC gelesen, nicht im Code dupliziert.
 - Slash-Befehle in eigener Lua-Datei, einfach erweiterbar. Es sollen aber bewusst nur sehr wenige Befehle existieren.
@@ -83,6 +86,6 @@ Diese Datei gibt Claude Code Orientierung für die Arbeit in diesem Repository.
 ## Wichtig / Nicht tun
 - Keinen Code 1:1 aus anderen Addons (z. B. Fishing Buddy, GatherMate2) übernehmen – nur Ansatz/Idee.
 - Vor jedem neuen Baustein prüfen, ob es eine Library dafür gibt.
-- Keine Blizzard-Artwork in Icons oder Grafiken.
+- Ingame-Oberflächen nutzen soweit möglich Spielgrafiken (Atlanten, Standardrahmen, Standardtexturen), nicht selbst gezeichnete. Eigene TGA-Icons nur für Logo und Modul-Icons. Blizzard-Artwork wird nie in eigene Icons oder Grafiken kopiert.
 - `.git` – Verzeichnis wir nicht mit in das REPO ZIP gepackt
 - Nicht selbstständig einen Build erstellen. Immer Fragen! Auswahl zum anklicken.

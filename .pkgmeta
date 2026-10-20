@@ -1,0 +1,8 @@
+package-as: BugLab
+
+ignore:
+  - documentation
+  - tests
+  - README.md
+  - CHANGELOG.md
+  - .gitattributes
