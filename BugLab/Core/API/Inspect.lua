@@ -113,6 +113,9 @@ function BugLab:TextureName(obj)
 end
 
 -- Alle auslesbaren Angaben zu einem Frame oder Bereich als Tabelle.
+-- Wie man ein unbenanntes Objekt im Code erreicht (z. B. "MeinButton:GetHighlightTexture()").
+BugLab.inspectRefs = setmetatable({}, { __mode = "k" })
+
 function BugLab:DescribeObject(obj)
     local info = { object = obj }
     info.type = Try(obj, "GetObjectType") or "?"
@@ -143,6 +146,16 @@ function BugLab:DescribeObject(obj)
         end
     end
 
+    -- Mouseover-Effekt (Hervorhebungs-Textur von Buttons): eigenes Objekt, das sich ebenfalls verstellen lässt.
+    if info.isFrame then
+        local highlight = Try(obj, "GetHighlightTexture")
+        if type(highlight) == "table" and highlight.GetObjectType then
+            info.highlight = highlight
+            info.highlightInfo = self:DescribeObject(highlight)
+            if not info.name:find("^<") then self.inspectRefs[highlight] = info.name .. ":GetHighlightTexture()" end
+        end
+    end
+
     if info.type == "Texture" then
         info.texture, info.atlas = Try(obj, "GetTexture"), Try(obj, "GetAtlas")
         info.textureName = self:TextureName(obj)
@@ -166,6 +179,100 @@ function BugLab:CanEditObject(obj)
     return true
 end
 
+-- Eigenschaften ------------------------------------------------------------------------------------------------------
+-- Alles, was sich außer Position, Größe, Alpha, Skalierung und Farbe verstellen lässt: Sichtbarkeit, Maus, Strata, Level,
+-- Zeichenebene, Textur (Datei/ID, Atlas, Ausschnitt, Mischmodus, Entsättigung, Kacheln) und Schrift (Text, Schrift,
+-- Ausrichtung). Jede Eigenschaft hat Lesen (ReadProps), Setzen (SETTERS) und Code (PROP_CODE) an einer Stelle.
+
+BugLab.INSPECT_ENUMS = {
+    strata = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG", "FULLSCREEN", "FULLSCREEN_DIALOG", "TOOLTIP" },
+    layer = { "BACKGROUND", "BORDER", "ARTWORK", "OVERLAY", "HIGHLIGHT" },
+    blend = { "DISABLE", "BLEND", "ALPHAKEY", "ADD", "MOD" },
+    justifyH = { "LEFT", "CENTER", "RIGHT" },
+    justifyV = { "TOP", "MIDDLE", "BOTTOM" },
+}
+
+-- Reihenfolge, in der Eigenschaften gesetzt und im Code ausgegeben werden (Atlas/Datei vor dem Ausschnitt).
+local PROP_ORDER = { "file", "atlas", "texcoord", "blend", "desaturated", "horizTile", "vertTile", "text", "font",
+    "justifyH", "justifyV", "layer", "strata", "level", "mouse", "shown" }
+
+local function ReadProps(obj)
+    local props = {}
+    props.shown = Try(obj, "IsShown")
+    if BugLab:IsFrameObject(obj) then
+        props.mouse, props.strata, props.level = Try(obj, "IsMouseEnabled"), Try(obj, "GetFrameStrata"), Try(obj, "GetFrameLevel")
+    end
+    local layer = TryAll(obj, "GetDrawLayer")
+    if layer and layer[1] then props.layer = layer[1] end
+    local kind = Try(obj, "GetObjectType")
+    if kind == "Texture" then
+        props.file, props.atlas, props.texcoord = Try(obj, "GetTexture"), Try(obj, "GetAtlas"), TryAll(obj, "GetTexCoord")
+        props.blend, props.desaturated = Try(obj, "GetBlendMode"), Try(obj, "IsDesaturated")
+        props.horizTile, props.vertTile = Try(obj, "GetHorizTile"), Try(obj, "GetVertTile")
+    elseif kind == "FontString" then
+        props.text, props.font = Try(obj, "GetText"), TryAll(obj, "GetFont")
+        props.justifyH, props.justifyV = Try(obj, "GetJustifyH"), Try(obj, "GetJustifyV")
+    end
+    return props
+end
+
+local function ToBool(value)
+    if type(value) == "string" then
+        value = value:lower()
+        return value == "true" or value == "1" or value == "ja" or value == "yes"
+    end
+    return value and true or false
+end
+
+local function Numbers(text)
+    local list = {}
+    for number in tostring(text):gmatch("[%-%d%.]+") do list[#list + 1] = tonumber(number) end
+    return list
+end
+
+-- "Pfad, Größe, Stil" oder {Pfad, Größe, Stil} -> Pfad, Größe, Stil
+local function ParseFont(value)
+    if type(value) == "table" then return value[1], tonumber(value[2]), value[3] or "" end
+    local path, size, flags = tostring(value):match("^%s*([^,]-)%s*,%s*([%d%.]+)%s*,?%s*(.-)%s*$")
+    return path, tonumber(size), flags or ""
+end
+
+local SETTERS = {
+    shown = function(o, v) o:SetShown(ToBool(v)) end,
+    mouse = function(o, v) o:EnableMouse(ToBool(v)) end,
+    strata = function(o, v) o:SetFrameStrata(v) end,
+    level = function(o, v) o:SetFrameLevel(assert(tonumber(v))) end,
+    layer = function(o, v) local _, sub = o:GetDrawLayer(); o:SetDrawLayer(v, sub or 0) end,
+    file = function(o, v) o:SetTexture(tonumber(v) or (v ~= "" and v or nil)) end,
+    atlas = function(o, v) assert(v ~= ""); o:SetAtlas(v) end,
+    texcoord = function(o, v)
+        local list = type(v) == "table" and v or Numbers(v)
+        assert(#list == 4 or #list == 8)
+        o:SetTexCoord(unpack(list))
+    end,
+    blend = function(o, v) o:SetBlendMode(v) end,
+    desaturated = function(o, v) o:SetDesaturated(ToBool(v)) end,
+    horizTile = function(o, v) o:SetHorizTile(ToBool(v)) end,
+    vertTile = function(o, v) o:SetVertTile(ToBool(v)) end,
+    text = function(o, v) o:SetText(tostring(v)) end,
+    font = function(o, v)
+        local path, size, flags = ParseFont(v)
+        assert(path and path ~= "" and size)
+        o:SetFont(path, size, flags)
+    end,
+    justifyH = function(o, v) o:SetJustifyH(v) end,
+    justifyV = function(o, v) o:SetJustifyV(v) end,
+}
+
+local function SameValue(a, b)
+    if type(a) == "table" or type(b) == "table" then
+        if type(a) ~= "table" or type(b) ~= "table" or #a ~= #b then return false end
+        for i = 1, #a do if tostring(a[i]) ~= tostring(b[i]) then return false end end
+        return true
+    end
+    return a == b
+end
+
 -- Ursprungswerte vor der ersten Änderung, damit "Zurücksetzen" möglich ist.
 BugLab.inspectOriginals = setmetatable({}, { __mode = "k" })
 
@@ -180,12 +287,24 @@ local function SaveOriginal(obj)
         points = Points(obj), width = size and size[1], height = size and size[2],
         alpha = Try(obj, "GetAlpha"), scale = Try(obj, "GetScale"),
         color = TryAll(obj, "GetVertexColor") or TryAll(obj, "GetTextColor"),
+        props = ReadProps(obj),
     }
 end
 
 local function ApplyPoints(obj, points)
     obj:ClearAllPoints()
     for _, p in ipairs(points) do obj:SetPoint(p.point, p.relTo, p.relPoint, p.x, p.y) end
+end
+
+-- Setzt eine Eigenschaft (Schlüssel siehe PROP_ORDER). Gibt true oder false plus Locale-Schlüssel des Grundes zurück.
+function BugLab:SetProperty(obj, key, value)
+    local ok, reason = self:CanEditObject(obj)
+    if not ok then return false, reason end
+    local setter = SETTERS[key]
+    if not setter then return false, "INS_BAD_VALUE" end
+    SaveOriginal(obj)
+    if not pcall(setter, obj, value) then return false, "INS_BAD_VALUE" end
+    return true
 end
 
 -- "RRGGBB" (auch mit #) oder {r, g, b} mit Werten von 0 bis 1 -> r, g, b.
@@ -242,6 +361,12 @@ function BugLab:ResetEdit(obj)
     if original.height then obj:SetHeight(original.height) end
     if original.alpha then obj:SetAlpha(original.alpha) end
     if original.scale and obj.SetScale then obj:SetScale(original.scale) end
+    -- Nur Eigenschaften zurücksetzen, die sich geändert haben (sonst würde z. B. ein Atlas durch seine Datei ersetzt).
+    local current = ReadProps(obj)
+    for _, key in ipairs(PROP_ORDER) do
+        local value = original.props and original.props[key]
+        if value ~= nil and not SameValue(value, current[key]) then pcall(SETTERS[key], obj, value) end
+    end
     if original.color then
         local kind = Try(obj, "GetObjectType")
         if kind == "Texture" then obj:SetVertexColor(unpack(original.color))
@@ -256,6 +381,12 @@ local function Num(value)
     if type(value) ~= "number" then return tostring(value) end
     if value == math.floor(value) then return tostring(value) end
     return (string.format("%.2f", value):gsub("0+$", ""):gsub("%.$", ""))
+end
+
+local function ListText(list)
+    local parts = {}
+    for i, v in ipairs(list) do parts[i] = Num(v) end
+    return table.concat(parts, ", ")
 end
 
 local function Blue(value) return BugLab:Paint("BRIGHTBLUE", value) end
@@ -273,53 +404,83 @@ local function PointText(p)
 end
 
 -- Anzeigezeilen zu einer DescribeObject-Tabelle. Bezeichnungen grau, Werte blau, Abschnitte weiß.
+-- Hex-Wert "RRGGBB" einer Farbe {r, g, b}.
+local function HexColor(color)
+    if not color then return "" end
+    local function byte(v) return math.floor(math.max(0, math.min(1, v or 0)) * 255 + 0.5) end
+    return string.format("%02X%02X%02X", byte(color[1]), byte(color[2]), byte(color[3]))
+end
+
+-- Gibt die Anzeigezeilen und, je Zeilennummer, die dort verstellbare Eigenschaft zurück ({ key, kind, value, options }):
+-- kind "bool" (Umschalter), "enum" (Auswahl aus options) oder "text" (Eingabefeld).
 function BugLab:FormatObjectInfo(info)
-    local lines = {}
+    local lines, props = {}, {}
     local function add(text) lines[#lines + 1] = text end
+    -- "target": Objekt, auf das sich die Eigenschaft bezieht (Standard das gewählte Objekt; beim Mouseover-Effekt die Textur).
+    local function prop(key, kind, value, options, target)
+        props[#lines] = { key = key, kind = kind, value = value, options = options, target = target }
+    end
     local function heading(key) add(""); add(self:Paint("WHITE", L[key])) end
+    local enums = self.INSPECT_ENUMS
 
     add(self:Paint("WHITE", info.name) .. " " .. self:Paint("GRAY", "(" .. info.type .. ")"))
     add(Row(L["INS_OWNER"], info.owner))
     if info.parentName then add(Row(L["INS_PARENT"], info.parentName)) end
-    if info.strata then add(Row(L["INS_STRATA"], info.strata .. " / " .. tostring(info.level))) end
+    if info.strata then
+        add(Row(L["INS_STRATA"], info.strata)); prop("strata", "enum", info.strata, enums.strata)
+        add(Row(L["INS_LEVEL"], tostring(info.level))); prop("level", "text", tostring(info.level))
+    end
     add(Row(L["INS_SIZE"], Num(info.width) .. " x " .. Num(info.height)))
     if info.rect then
         add(Row(L["INS_RECT"], string.format("%s, %s, %s x %s", Num(info.rect.left), Num(info.rect.bottom),
             Num(info.rect.width), Num(info.rect.height))))
     end
-    add(Row(L["INS_VISIBLE"], tostring(info.shown) .. " / " .. tostring(info.visible)))
+    add(Row(L["INS_VISIBLE"], tostring(info.shown) .. " / " .. tostring(info.visible))); prop("shown", "bool", info.shown and true or false)
     add(Row(L["INS_ALPHA"], Num(info.alpha) .. " (" .. Num(info.effectiveAlpha) .. ")"))
     if info.scale then add(Row(L["INS_SCALE"], Num(info.scale) .. " (" .. Num(info.effectiveScale) .. ")")) end
     if info.isFrame then
-        add(Row(L["INS_MOUSE"], tostring(info.mouse) .. (info.movable and " / " .. L["INS_MOVABLE"] or "")))
+        add(Row(L["INS_MOUSE"], tostring(info.mouse) .. (info.movable and " / " .. L["INS_MOVABLE"] or ""))); prop("mouse", "bool", info.mouse and true or false)
         if info.protected then add(Row(L["INS_PROTECTED"], "true")) end
     end
-    if info.layer and info.layer[1] then add(Row(L["INS_LAYER"], tostring(info.layer[1]) .. " " .. tostring(info.layer[2] or 0))) end
+    if info.layer and info.layer[1] then
+        add(Row(L["INS_LAYER"], tostring(info.layer[1]) .. " " .. tostring(info.layer[2] or 0))); prop("layer", "enum", info.layer[1], enums.layer)
+    end
 
     heading("INS_ANCHORS")
     if #info.points == 0 then add(self:Paint("GRAY", "-")) end
     for i, p in ipairs(info.points) do add(self:Paint("GRAY", i .. ":") .. " " .. Blue(PointText(p))) end
 
+    local function textureRows(tex, target, withName)
+        if withName then add(Row(L["INS_TEXNAME"], tostring(tex.textureName))) end
+        add(Row(L["INS_ATLAS"], tex.atlas or "-")); prop("atlas", "text", tex.atlas or "", nil, target)
+        add(Row(L["INS_FILE"], tostring(tex.texture))); prop("file", "text", tostring(tex.texture or ""), nil, target)
+        local coords = tex.texCoord and ListText(tex.texCoord) or "-"
+        add(Row(L["INS_TEXCOORD"], coords)); prop("texcoord", "text", tex.texCoord and coords or "", nil, target)
+        add(Row(L["INS_COLOR"], ColorText(tex.vertexColor))); prop("color", "text", HexColor(tex.vertexColor), nil, target)
+        add(Row(L["INS_BLEND"], tostring(tex.blend))); prop("blend", "enum", tex.blend, enums.blend, target)
+        add(Row(L["INS_DESATURATED"], tostring(tex.desaturated))); prop("desaturated", "bool", tex.desaturated and true or false, nil, target)
+        add(Row(L["INS_HTILE"], tostring(tex.horizTile))); prop("horizTile", "bool", tex.horizTile and true or false, nil, target)
+        add(Row(L["INS_VTILE"], tostring(tex.vertTile))); prop("vertTile", "bool", tex.vertTile and true or false, nil, target)
+    end
+
     if info.type == "Texture" then
         heading("INS_TEXTURE")
-        add(Row(L["INS_TEXNAME"], tostring(info.textureName)))
-        if info.atlas then add(Row(L["INS_ATLAS"], info.atlas)) end
-        add(Row(L["INS_FILE"], tostring(info.texture)))
-        add(Row(L["INS_TEXCOORD"], info.texCoord and table.concat((function()
-            local t = {}
-            for i, v in ipairs(info.texCoord) do t[i] = Num(v) end
-            return t
-        end)(), ", ") or "-"))
-        add(Row(L["INS_COLOR"], ColorText(info.vertexColor)))
-        add(Row(L["INS_BLEND"], tostring(info.blend)))
-        add(Row(L["INS_DESATURATED"], tostring(info.desaturated)))
-        if info.horizTile or info.vertTile then add(Row(L["INS_TILE"], tostring(info.horizTile) .. " / " .. tostring(info.vertTile))) end
+        textureRows(info, nil, true)
     elseif info.type == "FontString" then
         heading("INS_TEXT")
-        add(Row(L["INS_CONTENT"], tostring(info.text)))
-        if info.font then add(Row(L["INS_FONT"], tostring(info.font[1]) .. ", " .. Num(info.font[2]) .. ", " .. tostring(info.font[3] or ""))) end
-        add(Row(L["INS_COLOR"], ColorText(info.textColor)))
-        add(Row(L["INS_JUSTIFY"], tostring(info.justifyH) .. " / " .. tostring(info.justifyV)))
+        add(Row(L["INS_CONTENT"], tostring(info.text))); prop("text", "text", info.text or "")
+        if info.font then
+            local font = tostring(info.font[1]) .. ", " .. Num(info.font[2]) .. ", " .. tostring(info.font[3] or "")
+            add(Row(L["INS_FONT"], font)); prop("font", "text", font)
+        end
+        add(Row(L["INS_COLOR"], ColorText(info.textColor))); prop("color", "text", HexColor(info.textColor))
+        add(Row(L["INS_JUSTIFY_H"], tostring(info.justifyH))); prop("justifyH", "enum", info.justifyH, enums.justifyH)
+        add(Row(L["INS_JUSTIFY_V"], tostring(info.justifyV))); prop("justifyV", "enum", info.justifyV, enums.justifyV)
+    end
+
+    if info.highlightInfo then
+        heading("INS_HOVER")
+        textureRows(info.highlightInfo, info.highlight, false)
     end
 
     if info.isFrame then
@@ -331,7 +492,7 @@ function BugLab:FormatObjectInfo(info)
         if #info.regions == 0 then add(self:Paint("GRAY", "-")) end
         for i, region in ipairs(info.regions) do add(self:Paint("GRAY", i .. ":") .. " " .. Blue(region.name) .. " " .. self:Paint("GRAY", "(" .. region.type .. ")")) end
     end
-    return lines
+    return lines, props
 end
 
 -- Lua-Code zum Nachbauen ---------------------------------------------------------------------------------------------
@@ -494,6 +655,26 @@ local function ColorChanged(a, b)
     return false
 end
 
+local function PropCode(key, value, props)
+    if key == "shown" then return value and "f:Show()" or "f:Hide()"
+    elseif key == "mouse" then return string.format("f:EnableMouse(%s)", tostring(value))
+    elseif key == "strata" then return string.format("f:SetFrameStrata(%s)", Quote(value))
+    elseif key == "level" then return string.format("f:SetFrameLevel(%s)", Num(value))
+    elseif key == "layer" then return string.format("f:SetDrawLayer(%s)", Quote(value))
+    elseif key == "file" then return string.format("f:SetTexture(%s)", type(value) == "number" and Num(value) or Quote(value))
+    elseif key == "atlas" then return string.format("f:SetAtlas(%s)", Quote(value))
+    elseif key == "texcoord" then return string.format("f:SetTexCoord(%s)", ListText(value))
+    elseif key == "blend" then return string.format("f:SetBlendMode(%s)", Quote(value))
+    elseif key == "desaturated" then return string.format("f:SetDesaturated(%s)", tostring(value))
+    elseif key == "horizTile" then return string.format("f:SetHorizTile(%s)", tostring(value))
+    elseif key == "vertTile" then return string.format("f:SetVertTile(%s)", tostring(value))
+    elseif key == "text" then return string.format("f:SetText(%s)", Quote(value))
+    elseif key == "font" then return string.format("f:SetFont(%s, %s, %s)", Quote(value[1]), Num(value[2]), Quote(value[3] or ""))
+    elseif key == "justifyH" then return string.format("f:SetJustifyH(%s)", Quote(value))
+    elseif key == "justifyV" then return string.format("f:SetJustifyV(%s)", Quote(value)) end
+    return "-- " .. key .. " " .. tostring(props[key])
+end
+
 -- Code für alle bisher geänderten Elemente (auch mehrere verschiedene), nur mit dem, was sich gegenüber dem Ursprung
 -- geändert hat. Elemente ohne Namen brauchen eine Referenz, die man selbst einträgt.
 function BugLab:ChangesLua()
@@ -528,9 +709,14 @@ function BugLab:ChangesLua()
             if color and ColorChanged(color, original.color) then
                 body[#body + 1] = string.format("f:%s(%s)", kind == "Texture" and "SetVertexColor" or "SetTextColor", ColorText(color))
             end
+            local current = ReadProps(obj)
+            for _, key in ipairs(PROP_ORDER) do
+                local old, now = original.props and original.props[key], current[key]
+                if now ~= nil and not SameValue(old, now) then body[#body + 1] = PropCode(key, now, current) end
+            end
             if #body > 0 then
                 local name = self:ObjectName(obj)
-                local ref = name:find("^<") and "nil -- Referenz ergänzen (Element hat keinen Namen)" or name
+                local ref = self.inspectRefs[obj] or (name:find("^<") and "nil -- Referenz ergänzen (Element hat keinen Namen)" or name)
                 blocks[#blocks + 1] = table.concat({ "-- " .. name .. " (" .. tostring(kind) .. ")", "do", "    local f = " .. ref,
                     "    " .. table.concat(body, "\n    "), "end" }, "\n")
             end

@@ -2,4 +2,7 @@
 	<!-- Interne Module hier eintragen -->
 	<Script file="Console\Console.lua"/>
 	<Script file="Inspector\Inspector.lua"/>
+	<Script file="Inspector\TextureEditor.lua"/>
+	<Script file="Gallery\Gallery.lua"/>
+	<Script file="Probe\Probe.lua"/>
 </Ui>

@@ -1,5 +1,95 @@
 # Changelog
 
+## 0.1.42-alpha.1
+- Window: the BugSack icon turns red immediately: while the window is open BugLab also checks the error count every quarter second, in addition to BugGrabber's callbacks.
+- Probe: a parameter of type `color` gets a color swatch in front of the field; a click opens the game's color picker and writes the hex value (rrggbb) into the field.
+
+## 0.1.41-alpha.1
+- Chat: with Prat loaded, the beetle and the two log tabs move 30 px to the left (instead of 15).
+
+## 0.1.40-alpha.1
+- Chat: with Prat loaded, the beetle and the two log tabs move 15 px to the left.
+
+## 0.1.39-alpha.1
+- Chat: with Prat loaded, BugLab leaves out its own time in the chat window (Prat already adds one); the history in the BugLab window still shows it.
+- Colored values: colors already in the text (blue values) are removed first, so every section really gets its own color.
+
+## 0.1.38-alpha.1
+- Fix: the separator `|` of colored values showed a stray `|r` (the pipe is now escaped as `||`).
+
+## 0.1.37-alpha.1
+- Chat: the default chat font size is 12 (was 14) for both logs.
+- Colored values use the palette of a data grid (blue, green, yellow, purple, teal, orange, red; red last so ordinary values don't look like errors).
+
+## 0.1.36-alpha.1
+- Console, chat and history: values separated by `|` or `;` are colored in turn (blue, green, orange, purple, teal) so they are easy to tell apart; the heading before the first colon of a section is shown in a lighter tone of that color. Error and Fatal lines keep their red.
+- Options: chat font size of the BugLab chat window, separately for the debug log and the probe log (8 to 24, default 14). It only changes the BugLab window; the size applies while that log is shown.
+
+## 0.1.35-alpha.1
+- Chat: the BugLab window is detached from the general chat whenever it is docked (warning with details in the debug log if that fails); the old window `BugLab:Probes` is closed/hidden, the window and its tab are renamed to "BugLab", and the two BugLab tabs sit at the top right next to the beetle instead of over the game's own tab.
+
+## 0.1.34-alpha.1
+- Chat: BugLab has its own detached chat window "BugLab" (created after login, detached from the general chat whenever it is docked) with two tabs, `BugLab:Debug` and `BugLab:Probes`, which BugLab switches itself (today's lines of the chosen log are shown); the old windows of earlier versions are renamed (tab text too) or closed/hidden; the two tabs sit at the top right next to the beetle so they don't overlap the game's own tab. If the game refuses to create the window, a warning appears in the debug log.
+- Probe: a once-probe that ran through successfully shows a green check next to "Run" for 10 seconds.
+
+## 0.1.33-alpha.1
+- Window: the BugSack icon is permanently red while Lua errors exist (brighter red on hover), instead of gray.
+- Probe API: new `mode = "once"` for probes that only run once; they get a single "Run" button instead of Start/Stop. The default `mode = "toggle"` keeps Start and Stop. BugLab's own "Hello Lua error" probe is a once-probe.
+
+## 0.1.32-alpha.1
+- BugSack: deleting via right-click now uses BugSack's own reset routine and refreshes its icon, then re-reads the icon and error count a moment later (fix: icon stayed red).
+
+## 0.1.31-alpha.1
+- Probe: BugLab's own probe "Hello Lua error" (`/buglab probe BugLab lua-error [text]`) raises an artificial, harmless Lua error for testing BugSack. Because of it the Probe tab is always visible; a trailing text parameter takes the rest of the command line.
+- Window: the BugSack icon is red while BugSack holds errors (original colors on hover); it updates when an error is caught or the list is cleared.
+- Window: right-click on the BugSack icon deletes all BugSack entries (BugGrabber reset, logged as Info); left-click still opens BugSack.
+- Console: the switch between debug log and probe log is a dropdown ("Log") at the start of the filter row, before the source.
+
+## 0.1.30-alpha.1
+- New Probe API: addons register tests with `BugLab:RegisterProbe(addon, key, { title, desc, params, run, stop })`; BugLab provides the Probe tab (appears only when a probe is registered; pick addon, set parameters, start/stop), the command `/buglab probe`, and a long-term probe log.
+- Console: switch between the debug log and the probe log (same filters, search and delete dialog).
+- Chat: two chat tabs `BugLab:Debug` and `BugLab:Probes` (see 0.1.34).
+- `BugLab:GetHistory/ClearHistory/PruneHistory/GetLogSources` take an optional kind (`"probe"`).
+- Docs: `documentation/PROBE_API.md` with a prompt for other addons.
+
+## 0.1.29-alpha.1
+- Console: the warning in the delete dialog is red and bold (thick outline) with a warning icon in front.
+
+## 0.1.28-alpha.1
+- BugLab announces itself once per session with a debug line (version, debug state), like other addons do.
+- Docs: `documentation/CONSOLE_API_PROMPT.md`, a text prompt to hand to other addons.
+- Console API: `log:Announce({ version, debug })` lets an addon register once per session with a debug line showing its version and debug state.
+
+## 0.1.27-alpha.1
+- Console: the "Clear" button is an icon (red delete button); it opens a confirmation dialog with a choice between only the selected source or all sources and a "Delete now" button. `BugLab:ClearHistory(source)` deletes a single source.
+- Docs: `documentation/CONSOLE_API.md`.
+
+## 0.1.26-alpha.1
+- Window: resize grip sits at the bottom right corner (-2, -4).
+- Texture editor: content scrolls inside the page (fields and code no longer overlap on small windows).
+- Gallery: the word "Search" is a placeholder inside the search field.
+- Console: the reload message shows the full source {BugLab:Core}.
+- Texture editor: the mask path field has a tooltip with an example.
+
+## 0.1.25-alpha.1
+- New module Gallery (own tab): thumbnail view of atlases (client list or those used in the UI) with search, adjustable thumbnail size, selection with copyable Lua snippet and "Open in texture editor".
+- Inspector: sub-points are tabs (Details | Texture editor).
+- Inspector texture editor: large source view with a draggable crop rectangle (corners/move) or numeric fields, output size, zoom, offset, mask (none/circle/custom path with size and offset), live result preview and Lua code for exactly the chosen cut-out. "In texture editor" button for selected textures.
+- Inspector popup: close button (X) in the top right corner.
+- Inspector: the details are a list; every value that is not fixed has its control on the right (toggle for true/false, selection for options such as blend mode or strata, input field for text, file/ID, atlas, texture coordinates, color, font, level). Covers visibility, mouse, strata, level, draw layer, texture and font string properties.
+- Inspector: the mouseover effect (highlight texture of buttons) is listed and editable too; changes show up in the "Changes" code with `Button:GetHighlightTexture()`.
+- Inspector page: parent, layers and children have their own row below the pick buttons.
+- Window: the gear icon glows in a stronger blue on hover.
+- Window: the BugSack header icon shows its original colors on hover (gray otherwise).
+- Console: every reload is logged as Info ("UI reloaded", source BugLab:Core).
+
+
+## 0.1.24-alpha.1
+- CI: fixed all luacheck warnings (shadowed variables, unused variables).
+
+## 0.1.23-alpha.2
+- Repo: README heading is "# README.md".
+
 ## 0.1.23-alpha.1
 - Chat: BugLab's own messages show the original addon name with its colors ("Bug" white, "Lab" blue) inside the braces.
 - Chat: the module or extension part of the source (":Console") is gray, only the addon name stays blue.

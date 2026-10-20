@@ -28,7 +28,7 @@ BugLab.MEDIA_PATH = "Interface\\AddOns\\" .. ADDON_NAME .. "\\Media\\"
 BugLab.OPTIONS_NAME = "|T" .. BugLab.MEDIA_PATH .. "BugLab_Beetle_Outlined_32:16:16|t " .. BugLab.NAME_COLORED
 
 -- Reihenfolge = Anzeige in der Übersicht. Tabelle wird von den Modulen nicht verändert.
-BugLab.MODULES = { "Console", "Inspector", "Probe" }
+BugLab.MODULES = { "Console", "Inspector", "Gallery", "Probe" }
 
 local DB_DEFAULTS = {
     profile = {
@@ -36,10 +36,11 @@ local DB_DEFAULTS = {
         reloadHotkey = true,
         historyDays = 30, -- Aufbewahrung der Console-Historie
         logRateLimit = 30, -- Zeilen pro Sekunde und Quelle, 0 = keine Drosselung
-        modules = { Console = true, Inspector = true, Probe = true },
+        chatFontSize = { console = 12, probe = 12 }, -- Schriftgröße des BugLab-Chatfensters je Log
+        modules = { Console = true, Inspector = true, Gallery = true, Probe = true },
         minimap = { hide = false, minimapPos = 180 }, -- Format von LibDBIcon
     },
-    global = { history = {} }, -- Console-Historie, profilübergreifend
+    global = { history = {}, probeHistory = {} }, -- Console- und Probe-Historie, profilübergreifend
 }
 
 -- Version und Infos kommen aus der TOC, nicht aus dem Code.
@@ -94,12 +95,16 @@ function BugLab:OnInitialize()
 
     self:FlushPendingLog()
     self:PruneHistory()
+    self:PruneHistory(nil, "probe")
     self:SetupOptions()
     self:SetupCommands()
 end
 
 function BugLab:OnEnable()
     self:SetupReloadHotkey()
+    self:SetupReloadLog()
+    self:WatchBugSack()
+    self:RegisterMessage("BUGLAB_PROBE_REGISTERED", function() if self.window then self:RefreshWindow() end end)
     self:SetupMinimapButton()
     self:SetupCompartment()
     for _, name in ipairs(self.MODULES) do
@@ -107,6 +112,8 @@ function BugLab:OnEnable()
             self:DisableModule(name)
         end
     end
+    -- BugLab meldet sich wie jedes andere Addon einmal pro Sitzung mit Version und Debug-Zustand.
+    self:GetLogger("BugLab:Core"):Announce({ version = self:GetMeta("Version"), debug = self.db.profile.debug })
 end
 
 function BugLab:OnProfileChanged()

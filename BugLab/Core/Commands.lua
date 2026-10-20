@@ -9,7 +9,10 @@ end
 
 function BugLab:OnSlashCommand(input)
     local cmd = (input or ""):lower():match("^%s*(.-)%s*$")
-    if cmd == "help" or cmd == "hilfe" then
+    local probeArgs = (input or ""):match("^%s*[Pp][Rr][Oo][Bb][Ee]%s*(.*)$")
+    if probeArgs then
+        self:HandleProbeCommand(probeArgs)
+    elseif cmd == "help" or cmd == "hilfe" then
         self:PrintHelp()
     elseif cmd == "pick" then
         local inspector = self:GetModule("Inspector", true)
@@ -23,5 +26,6 @@ function BugLab:PrintHelp()
     self:Print(L["HELP_HEADER"])
     DEFAULT_CHAT_FRAME:AddMessage("  |cff66bbff/buglab|r, |cff66bbff/bl|r |cff999999- " .. L["HELP_WINDOW"] .. "|r")
     DEFAULT_CHAT_FRAME:AddMessage("  |cff66bbff/buglab pick|r |cff999999- " .. L["HELP_PICK"] .. "|r")
+    DEFAULT_CHAT_FRAME:AddMessage("  |cff66bbff/buglab probe|r |cff999999- " .. L["HELP_PROBE"] .. "|r")
     DEFAULT_CHAT_FRAME:AddMessage("  |cff66bbff/buglab help|r, |cff66bbff/buglab hilfe|r |cff999999- " .. L["HELP_HELP"] .. "|r")
 end

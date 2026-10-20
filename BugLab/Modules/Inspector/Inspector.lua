@@ -8,6 +8,8 @@ local ROW_HEIGHT, Desaturate, Button = BugLab.ROW_HEIGHT, BugLab.Desaturate, Bug
 local PICK_INTERVAL = 0.1
 local MAX_MENU_ENTRIES = 60
 local OUTLINE_PAUSE = 2
+local CONTROL_WIDTH = 170 -- Breite der Bedienelemente rechts neben den Werten
+local EDIT_FIELDS = { x = true, y = true, width = true, height = true, alpha = true, scale = true, color = true }
 local MODE_NEXT = { info = "code", code = "changes", changes = "info" }
 local MODE_BUTTON = { info = "INS_CODE", code = "INS_CHANGES", changes = "INS_INFO" }
 local BLUE = { 0.4, 0.73, 1, 1 }
@@ -264,9 +266,11 @@ function Inspector:Refresh()
     if not view then return end
     local obj = self.target
     if not obj then
+        view.panel:Hide()
+        view.textScroll:Show()
         view.SetText(BugLab:Paint("GRAY", L["INS_NONE"]))
         view.editRow:Hide()
-        view.parent:Disable(); view.layerPrev:Disable(); view.layerNext:Disable(); view.layer:SetText(""); view.children:Hide(); view.code:Disable(); view.refresh:Disable(); view.clear:Disable()
+        view.parent:Disable(); view.layerPrev:Disable(); view.layerNext:Disable(); view.layer:SetText(""); view.children:Hide(); view.code:Disable(); view.refresh:Disable(); view.clear:Disable(); view.toEditor:Disable()
         return
     end
     view.parent:SetEnabled(obj.GetParent and obj:GetParent() ~= nil)
@@ -275,15 +279,20 @@ function Inspector:Refresh()
     view.layerPrev:SetEnabled(count > 1)
     view.layerNext:SetEnabled(count > 1)
     view.code:Enable(); view.refresh:Enable(); view.clear:Enable()
+    view.toEditor:SetEnabled(self:TextureSource(obj) ~= nil)
     view.code:SetText(L[MODE_BUTTON[self.mode or "info"]])
 
     local info = BugLab:DescribeObject(obj)
+    local showPanel = self.mode ~= "changes" and self.mode ~= "code"
+    view.panel:SetShown(showPanel)
+    view.textScroll:SetShown(not showPanel)
     if self.mode == "changes" then
         view.SetText(BugLab:ChangesLua())
     elseif self.mode == "code" then
         view.SetText(BugLab:ExportLua(obj))
     else
-        view.SetText(table.concat(BugLab:FormatObjectInfo(info), "\n"))
+        local lines, props = BugLab:FormatObjectInfo(info)
+        self:FillPanel(lines, props, (BugLab:CanEditObject(obj)))
     end
     self:RefreshChildren(info)
     self:RefreshEditRow(info)
@@ -372,9 +381,11 @@ function Inspector:RefreshEditRow(info)
 end
 
 -- Wert aus einem Eingabefeld anwenden, danach neu auslesen.
-function Inspector:ApplyField(key, text)
-    if not self.target then return end
-    local ok, reason = BugLab:ApplyEdit(self.target, key, text)
+function Inspector:ApplyField(key, text, target)
+    target = target or self.target
+    if not target then return end
+    local apply = EDIT_FIELDS[key] and BugLab.ApplyEdit or BugLab.SetProperty
+    local ok, reason = apply(BugLab, target, key, text)
     self:SetStatus(not ok and BugLab:Paint("ERROR", L[reason]) or nil)
     -- Die Markierung verschwindet beim Verstellen, damit man die neue Position sieht; 2 Sekunden nach der letzten
     -- Änderung kommt sie wieder.
@@ -415,6 +426,8 @@ local function CreateTextArea(parent)
     end
 end
 
+BugLab.CreateTextArea = CreateTextArea
+
 -- Popup ---------------------------------------------------------------------------------------------------------------
 
 -- Kleines eigenes Fenster mit den Änderungsfeldern des gewählten Elements. Es ist unabhängig vom Hauptfenster, damit man
@@ -440,6 +453,7 @@ function Inspector:BuildPopup()
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOP", 0, -3)
     frame.title:SetText(BugLab:Paint("WHITE", L["INS_POPUP_TITLE"]))
+    BugLab.CreateCloseButton(frame, true)
     frame.name = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     frame.name:SetPoint("TOP", frame.title, "BOTTOM", 0, -6)
     frame.name:SetWidth(620)
@@ -509,10 +523,127 @@ function Inspector:RefreshPopup(info)
     frame.SetCode(self.popupChanges and BugLab:ChangesLua() or BugLab:ExportLua(info.object))
     frame.toggle:SetText(self.popupChanges and L["INS_ELEMENT_CODE"] or L["INS_CHANGES"])
     local count = self.layers and #self.layers or 0
-    frame.layer:SetText(count > 0 and BugLab:Paint("LIGHTGRAY", L["INS_LAYER"] .. " ") .. BugLab:Paint("BRIGHTBLUE", self.layerIndex .. "/" .. count) or "")
+    frame.layer:SetText(count > 0 and BugLab:Paint("LIGHTGRAY", L["INS_LAYER_NAV"] .. " ") .. BugLab:Paint("BRIGHTBLUE", self.layerIndex .. "/" .. count) or "")
     for _, button in ipairs(frame.layerButtons) do button:SetEnabled(count > 1) end
     local parent = self.target and self.target.GetParent and self.target:GetParent()
     frame.parentButton:SetEnabled(parent ~= nil)
+end
+
+-- Eigenschaftenliste ---------------------------------------------------------------------------------------------------
+
+-- Eine Zeile der Liste: Text links, bei verstellbaren Werten rechts (rechtsbündig) das passende Bedienelement.
+function Inspector:CreateRow()
+    local row = CreateFrame("Frame", nil, self.view.content)
+    row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    row.text:SetPoint("TOPLEFT", 0, -2)
+    row.text:SetJustifyH("LEFT")
+    row.text:SetJustifyV("TOP")
+    return row
+end
+
+local function ApplyRowValue(inspector, row, value)
+    local prop = row.prop
+    inspector:ApplyField(prop.key, value, prop.target)
+end
+
+-- Zeigt für eine Zeile das Bedienelement ihrer Eigenschaft (oder keins).
+function Inspector:SetupRowControl(row, prop)
+    row.prop = prop
+    for _, name in ipairs({ "toggle", "edit", "menu" }) do
+        if row[name] then row[name]:Hide() end
+    end
+    if not prop then return end
+    if prop.kind == "bool" then
+        if not row.toggle then
+            row.toggle = Button(row, "", CONTROL_WIDTH, function() ApplyRowValue(self, row, not row.prop.value) end)
+            row.toggle:SetPoint("TOPRIGHT", row, "TOPRIGHT", -2, 0)
+        end
+        row.toggle:SetText(BugLab:Paint(prop.value and "BRIGHTBLUE" or "LIGHTGRAY", tostring(prop.value)))
+        row.toggle:Show()
+    elseif prop.kind == "enum" then
+        if not row.menu then
+            local ok, dropdown = pcall(CreateFrame, "DropdownButton", nil, row, "WowStyle1DropdownTemplate")
+            if ok and dropdown and dropdown.SetupMenu then
+                dropdown:SetSize(CONTROL_WIDTH, ROW_HEIGHT)
+                Desaturate(dropdown)
+                if dropdown.Arrow then dropdown.Arrow:SetDesaturated(true); dropdown.Arrow:SetVertexColor(0.6, 0.82, 1) end
+                dropdown:SetupMenu(function(_, root)
+                    local current = row.prop
+                    for _, option in ipairs(current.options or {}) do
+                        root:CreateRadio(option, function() return row.prop.value == option end,
+                            function() ApplyRowValue(self, row, option) end)
+                    end
+                end)
+            else
+                -- Ohne Auswahlvorlage schaltet der Knopf reihum zum nächsten Wert.
+                dropdown = Button(row, "", CONTROL_WIDTH, function()
+                    local options, index = row.prop.options or {}, 0
+                    for i, option in ipairs(options) do if option == row.prop.value then index = i end end
+                    if #options > 0 then ApplyRowValue(self, row, options[index % #options + 1]) end
+                end)
+            end
+            dropdown:SetPoint("TOPRIGHT", row, "TOPRIGHT", -2, 0)
+            row.menu = dropdown
+        end
+        if row.menu.SetDefaultText then
+            row.menu:SetDefaultText(BugLab:Paint("WHITE", tostring(prop.value)))
+            if row.menu.GenerateMenu then row.menu:GenerateMenu() end
+        else
+            row.menu:SetText(BugLab:Paint("WHITE", tostring(prop.value)))
+        end
+        row.menu:Show()
+    else
+        if not row.edit then
+            local box = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+            box:SetSize(CONTROL_WIDTH - 8, ROW_HEIGHT)
+            box:SetPoint("TOPRIGHT", row, "TOPRIGHT", -6, 0)
+            box:SetAutoFocus(false)
+            Desaturate(box)
+            BugLab:HookReloadKey(box)
+            box:SetScript("OnEnterPressed", function(input) input:ClearFocus(); ApplyRowValue(self, row, input:GetText()) end)
+            box:SetScript("OnEscapePressed", function(input) input:ClearFocus(); self:Refresh() end)
+            row.edit = box
+        end
+        if not row.edit:HasFocus() then
+            row.edit:SetText(tostring(prop.value or ""))
+            row.edit:SetCursorPosition(0)
+        end
+        row.edit:Show()
+    end
+end
+
+-- Merkt sich Zeilen und verstellbare Eigenschaften und legt die Liste neu aus.
+function Inspector:FillPanel(lines, props, editable)
+    self.panelData = { lines = lines, props = props, editable = editable }
+    self:LayoutPanel()
+end
+
+function Inspector:LayoutPanel()
+    local data, view = self.panelData, self.view
+    if not (data and view) then return end
+    local width = tonumber(view.content:GetWidth()) or 0
+    if width < 100 then width = 600 end
+    local y = 0
+    for i, line in ipairs(data.lines) do
+        local row = view.rows[i]
+        if not row then row = self:CreateRow(); view.rows[i] = row end
+        local prop = data.editable and data.props[i] or nil
+        row.text:SetWidth(width - (prop and CONTROL_WIDTH + 8 or 0))
+        row.text:SetText(line)
+        local height = math.max(tonumber(row.text:GetStringHeight()) or 14, 14) + 4
+        if prop then height = math.max(height, ROW_HEIGHT + 2) end
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", view.content, "TOPLEFT", 0, -y)
+        row:SetSize(width, height)
+        self:SetupRowControl(row, prop)
+        row:Show()
+        y = y + height
+    end
+    for i = #data.lines + 1, #view.rows do
+        view.rows[i]:Hide()
+        self:SetupRowControl(view.rows[i], nil)
+    end
+    view.content:SetHeight(math.max(y, 1))
 end
 
 -- Aufbau der Seite ------------------------------------------------------------------------------------------------------
@@ -538,8 +669,8 @@ function Inspector:CreateEditRow(parent)
         box:SetAutoFocus(false)
         Desaturate(box)
         BugLab:HookReloadKey(box)
-        box:SetScript("OnEnterPressed", function(edit) edit:ClearFocus(); self:ApplyField(key, edit:GetText()) end)
-        box:SetScript("OnEscapePressed", function(edit) edit:ClearFocus(); self:Refresh() end)
+        box:SetScript("OnEnterPressed", function(input) input:ClearFocus(); self:ApplyField(key, input:GetText()) end)
+        box:SetScript("OnEscapePressed", function(input) input:ClearFocus(); self:Refresh() end)
         -- Schrittweite: 1 (Umschalt: 10); bei Alpha und Skalierung 0,05 (Umschalt: 0,25).
         local function Step(direction)
             local fine = key == "alpha" or key == "scale"
@@ -589,10 +720,10 @@ function Inspector:CreateEditRow(parent)
         box:SetScript("OnEnterPressed", function(input) input:ClearFocus(); self:ApplyField("color", input:GetText()) end)
         box:SetScript("OnEscapePressed", function(input) input:ClearFocus(); self:Refresh() end)
         local swatch = Button(row, "", 26, function()
-            local target, old = self.target, nil
+            local target = self.target
             if not target then return end
             local info = BugLab:DescribeObject(target)
-            old = info.vertexColor or info.textColor
+            local old = info.vertexColor or info.textColor
             if not (old and ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow) then return end
             -- Der Farbwähler liegt sonst hinter dem Popup (FULLSCREEN_DIALOG).
             pcall(function() ColorPickerFrame:SetFrameStrata("FULLSCREEN_DIALOG"); ColorPickerFrame:SetFrameLevel(100) end)
@@ -620,20 +751,37 @@ function Inspector:CreateEditRow(parent)
     return edit
 end
 
+local TAB_HEIGHT = 34
+local SUBTABS = { "details", "editor" }
+local SUBTAB_LABEL = { details = "INS_TAB_DETAILS", editor = "INS_TAB_EDITOR" }
+
 function Inspector:BuildPage()
-    local page = BugLab:GetPage("Inspector")
-    local view = { page = page, fields = {} }
+    local pageFrame = BugLab:GetPage("Inspector")
+    -- Unterpunkte als Reiter: Details (die bisherige Seite) und Textur-Editor.
+    local page = CreateFrame("Frame", nil, pageFrame)
+    page:SetPoint("TOPLEFT", 0, -TAB_HEIGHT)
+    page:SetPoint("BOTTOMRIGHT")
+    local view = { page = page, pageFrame = pageFrame, fields = {}, subtabs = {} }
     self.view = view
     self.page = page
+    for i, key in ipairs(SUBTABS) do
+        local button = Button(pageFrame, L[SUBTAB_LABEL[key]], 130, function() self:SelectSubTab(key) end)
+        button:SetPoint("TOPLEFT", 6 + (i - 1) * 136, -4)
+        view.subtabs[key] = button
+    end
+    local editorFrame = self:BuildTextureEditor(pageFrame)
+    editorFrame:SetPoint("TOPLEFT", 0, -TAB_HEIGHT)
+    editorFrame:SetPoint("BOTTOMRIGHT")
 
-    -- Zeile 1: Pick, Eltern, Kinder, Aktualisieren, Lua-Code.
+    -- Zeile 1: Pick, Abwählen, Aktualisieren, Lua-Code.
     view.pick = Button(page, L["INS_PICK"], 100, function() self:StartPick() end)
     view.pick:SetPoint("TOPLEFT", 6, -6)
     view.parent = Button(page, L["INS_PARENT_BTN"], 80, function()
         local parent = self.target and self.target:GetParent()
         if parent then self:Select(parent) end
     end)
-    view.parent:SetPoint("LEFT", view.pick, "RIGHT", 6, 0)
+    -- Zeile 2 (Navigation): Eltern, Ebenen, Kinder.
+    view.parent:SetPoint("TOPLEFT", view.pick, "BOTTOMLEFT", 0, -6)
     local ok, dropdown = pcall(CreateFrame, "DropdownButton", nil, page, "WowStyle1DropdownTemplate")
     if ok and dropdown and dropdown.SetupMenu then
         dropdown:SetSize(130, ROW_HEIGHT)
@@ -644,10 +792,10 @@ function Inspector:BuildPage()
         view.children = Button(page, L["INS_CHILDREN_BTN"]:format(0), 130, function() end)
     end
     view.clear = Button(page, L["INS_CLEAR"], 90, function() self:ClearSelection() end)
-    view.clear:SetPoint("LEFT", view.parent, "RIGHT", 6, 0)
+    view.clear:SetPoint("LEFT", view.pick, "RIGHT", 6, 0)
     -- Ebenen der letzten Wahl (1 = vorne), wie im Popup.
     view.layerPrev = Button(page, "<", 28, function() self:MoveLayer(-1) end)
-    view.layerPrev:SetPoint("LEFT", view.clear, "RIGHT", 6, 0)
+    view.layerPrev:SetPoint("LEFT", view.parent, "RIGHT", 6, 0)
     view.layer = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     view.layer:SetWidth(56)
     view.layer:SetPoint("LEFT", view.layerPrev, "RIGHT", 2, 0)
@@ -662,13 +810,18 @@ function Inspector:BuildPage()
     view.code:SetPoint("TOPRIGHT", -6, -6)
     view.refresh = Button(page, L["INS_REFRESH"], 110, function() self:Refresh() end)
     view.refresh:SetPoint("RIGHT", view.code, "LEFT", -6, 0)
+    view.toEditor = Button(page, L["INS_TO_EDITOR"], 140, function()
+        local source, crop = self:TextureSource(self.target)
+        if source then self:OpenTextureEditor(source, crop) end
+    end)
+    view.toEditor:SetPoint("RIGHT", view.refresh, "LEFT", -6, 0)
 
-    -- Zeile 2: Änderungsfelder (nur bei eigenen Frames) oder der Hinweis "nur Anzeige".
+    -- Zeile 3: Änderungsfelder (nur bei eigenen Frames) oder der Hinweis "nur Anzeige".
     local edit = self:CreateEditRow(page)
     view.edit = edit
     view.editRow, view.fields, view.locked, view.reset, view.status = edit.row, edit.fields, edit.locked, edit.reset, edit.status
     local row = edit.row
-    row:SetPoint("TOPLEFT", view.pick, "BOTTOMLEFT", 0, -6)
+    row:SetPoint("TOPLEFT", view.parent, "BOTTOMLEFT", 0, -6)
     row:SetPoint("RIGHT", page, "RIGHT", -6, 0)
     view.reset:SetPoint("TOPRIGHT", row, "TOPRIGHT", -6, -14)
     view.status:SetPoint("RIGHT", view.reset, "LEFT", -10, 0)
@@ -679,17 +832,45 @@ function Inspector:BuildPage()
     scroll:SetPoint("TOPLEFT", row, "BOTTOMLEFT", 0, -4)
     scroll:SetPoint("BOTTOMRIGHT", -26, 8)
 
+    view.textScroll = scroll
+
+    -- Details als Liste: verstellbare Werte tragen rechts ihr Bedienelement.
+    local panel = CreateFrame("ScrollFrame", nil, page, "UIPanelScrollFrameTemplate")
+    panel:SetPoint("TOPLEFT", row, "BOTTOMLEFT", 0, -4)
+    panel:SetPoint("BOTTOMRIGHT", -26, 8)
+    local content = CreateFrame("Frame", nil, panel)
+    content:SetSize(10, 10)
+    panel:SetScrollChild(content)
+    view.panel, view.content, view.rows = panel, content, {}
+    panel:SetScript("OnSizeChanged", function(_, width)
+        content:SetWidth(width)
+        self:LayoutPanel()
+    end)
+
     -- Die Markierung des gewählten Elements gilt nur, solange die Seite sichtbar ist (Fenster zu oder anderer Reiter = weg).
-    page:SetScript("OnShow", function()
+    pageFrame:SetScript("OnShow", function()
         self.popupStandalone = false
         if self.target then (self.popup or self:BuildPopup()):Show() end
         self:Refresh()
     end)
-    page:SetScript("OnHide", function()
+    pageFrame:SetScript("OnHide", function()
         if self.popup and not self.popupStandalone then self.popup:Hide() end
         if self.selectOutline and not self:IsShowingTarget() then self.selectOutline:Hide() end
     end)
+    self:SelectSubTab("details")
     self:Refresh()
+end
+
+-- Wechselt zwischen "details" und "editor".
+function Inspector:SelectSubTab(key)
+    local view = self.view
+    if not view then return end
+    self.subtab = key
+    view.page:SetShown(key == "details")
+    self.editorView.frame:SetShown(key == "editor")
+    for name, button in pairs(view.subtabs) do
+        button:SetText(name == key and BugLab:Paint("BRIGHTBLUE", L[SUBTAB_LABEL[name]]) or L[SUBTAB_LABEL[name]])
+    end
 end
 
 function Inspector:OnEnable()

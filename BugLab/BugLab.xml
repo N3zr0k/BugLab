@@ -13,7 +13,9 @@
 	<Script file="Core\API\Dump.lua"/>
 	<Script file="Core\API\Inspect.lua"/>
 	<Script file="Core\API\Log.lua"/>
+	<Script file="Core\API\Probe.lua"/>
 	<Script file="Core\Integrations\BugSack.lua"/>
+	<Script file="Core\Integrations\Prat.lua"/>
 	<Script file="Core\Launcher\Minimap.lua"/>
 	<Script file="Core\Launcher\Compartment.lua"/>
 	<Script file="Core\Options.lua"/>

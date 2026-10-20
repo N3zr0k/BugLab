@@ -7,7 +7,7 @@ local C = BugLab.COLORS
 
 local WIDTH, HEIGHT = 850, 500
 local MIN_WIDTH, MIN_HEIGHT, MAX_WIDTH, MAX_HEIGHT = 850, 360, 1500, 950
-local GRIP_INSET = 8
+local GRIP_X, GRIP_Y = -2, -4
 local TAB_SIZE, TAB_GAP = 52, 10 -- Fallback-Reiter ohne Atlanten
 local ICON_INSET = 6
 
@@ -47,6 +47,7 @@ local CIRCLE_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local MODULE_ICONS = {
     Console = "BugLab_Console_128",
     Inspector = "BugLab_Inspector_128",
+    Gallery = "BugLab_Gallery_128",
     Probe = "BugLab_Probe_128",
 }
 
@@ -294,7 +295,7 @@ local function BuildCloseButton(window, skinned)
     local close = CreateFrame("Button", nil, window)
     close:SetFrameLevel(window:GetFrameLevel() + 30)
     close:SetScript("OnClick", function() window:Hide() end)
-    if skinned and C_Texture.GetAtlasInfo(FRAME.close.normal) then
+    if skinned and C_Texture and C_Texture.GetAtlasInfo(FRAME.close.normal) then
         close:SetSize(FRAME.closeSize, FRAME.closeSize)
         close:SetPoint("TOPRIGHT", FRAME.closeX, FRAME.closeY)
         close:SetNormalAtlas(FRAME.close.normal)
@@ -311,11 +312,14 @@ local function BuildCloseButton(window, skinned)
     return close
 end
 
+-- Auch für andere Fenster (z. B. das Inspector-Popup): X-Knopf oben rechts, schließt das Fenster.
+BugLab.CreateCloseButton = BuildCloseButton
+
 -- Symbole links neben dem Schließen-Knopf (Zahnrad, BugSack): flach in der Titelzeile wie die Leiste eines
 -- macOS-Fensters, ohne Kasten. Grau, beim Überfahren in BugLab-Blau.
 local HEADER = { size = 16, gap = 8, scale = 1.25, gear = "Interface\\WorldMap\\GEAR_64GREY" }
 
-local function BuildHeaderIcon(window, anchor, gap, texture, tooltip, onClick)
+local function BuildHeaderIcon(window, anchor, gap, texture, tooltip, onClick, originalOnHover)
     local button = CreateFrame("Button", nil, window)
     button:SetSize(HEADER.size, HEADER.size)
     button:SetScale(HEADER.scale)
@@ -326,10 +330,26 @@ local function BuildHeaderIcon(window, anchor, gap, texture, tooltip, onClick)
     icon:SetDesaturated(true)
     button.icon = icon
 
+    -- originalOnHover: beim Überfahren erscheint das Symbol in seinen Originalfarben (z. B. das BugSack-Icon).
+    -- button.alert (BugSack hat Fehler): das Symbol ist rot statt grau, beim Überfahren in Originalfarben.
     local function Paint(hover)
-        icon:SetVertexColor(unpack(hover and C.BRIGHTBLUE_FONT_COLOR or C.LIGHTGRAY_FONT_COLOR))
+        button.hover = hover
+        if originalOnHover then icon:SetDesaturated(button.alert or not hover) end
+        if button.alert then
+            -- Dauerhaft rot, solange Fehler vorliegen; beim Überfahren etwas heller.
+            if hover then icon:SetVertexColor(1, 0.45, 0.4) else icon:SetVertexColor(1, 0.15, 0.15) end
+        elseif originalOnHover and hover then
+            icon:SetVertexColor(1, 1, 1)
+        elseif hover then
+            -- Das graue Symbol getönt bliebe matt; additiv gemischt leuchtet es kräftig in BugLab-Blau.
+            icon:SetVertexColor(0.3, 0.75, 1)
+        else
+            icon:SetVertexColor(unpack(C.LIGHTGRAY_FONT_COLOR))
+        end
+        if not originalOnHover then icon:SetBlendMode(hover and "ADD" or "BLEND") end
     end
     Paint(false)
+    button.Repaint = function() Paint(button.hover and true or false) end
     if texture then icon:SetTexture(texture) end
     button:SetScript("OnEnter", function(self)
         Paint(true)
@@ -340,7 +360,8 @@ local function BuildHeaderIcon(window, anchor, gap, texture, tooltip, onClick)
     button:SetScript("OnLeave", function() Paint(false); GameTooltip:Hide() end)
     button:SetScript("OnMouseDown", function() icon:SetPoint("TOPLEFT", 1, -1); icon:SetPoint("BOTTOMRIGHT", 1, -1) end)
     button:SetScript("OnMouseUp", function() icon:ClearAllPoints(); icon:SetAllPoints() end)
-    button:SetScript("OnClick", onClick)
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    button:SetScript("OnClick", function(_, mouseButton) onClick(mouseButton) end)
     return button
 end
 
@@ -349,7 +370,7 @@ end
 local function BuildHeaderIcons(window, close)
     local gear = BuildHeaderIcon(window, close, HEADER.gap, HEADER.gear,
         function(tip) tip:SetText(L["OPEN_OPTIONS"]) end,
-        function() BugLab:OpenOptions() end)
+        function(mouseButton) if mouseButton ~= "RightButton" then BugLab:OpenOptions() end end)
     window.settingsButton = gear
 
     local sack = BuildHeaderIcon(window, gear, HEADER.gap, nil,
@@ -361,8 +382,11 @@ local function BuildHeaderIcons(window, close)
             elseif count then
                 tip:AddLine(L["BUGSACK_NONE"], 0.6, 0.6, 0.6)
             end
+            tip:AddLine(L["BUGSACK_CLEAR_HINT"], 0.6, 0.6, 0.6)
         end,
-        function() BugLab:OpenBugSack() end)
+        function(mouseButton)
+            if mouseButton == "RightButton" then BugLab:ClearBugSack() else BugLab:OpenBugSack() end
+        end, true)
     sack:Hide()
     window.bugSackButton = sack
 end
@@ -378,7 +402,7 @@ local function BuildResizeGrip(window)
     end
     local grip = CreateFrame("Button", nil, window)
     grip:SetSize(16, 16)
-    grip:SetPoint("BOTTOMRIGHT", -GRIP_INSET, GRIP_INSET)
+    grip:SetPoint("BOTTOMRIGHT", GRIP_X, GRIP_Y)
     grip:SetFrameLevel(window:GetFrameLevel() + 30)
     grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
@@ -400,9 +424,9 @@ function BugLab:CreateWindow()
     window:EnableMouse(true)
     window:RegisterForDrag("LeftButton")
     window:SetScript("OnDragStart", window.StartMoving)
-    window:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        SavePosition(self)
+    window:SetScript("OnDragStop", function(frame)
+        frame:StopMovingOrSizing()
+        SavePosition(frame)
     end)
     window:Hide()
     RestorePosition(window)

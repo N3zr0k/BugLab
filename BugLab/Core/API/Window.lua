@@ -5,9 +5,17 @@ local BugLab = _G.BugLab
 function BugLab:GetVisibleModules()
     local list = {}
     for _, name in ipairs(self.MODULES) do
-        if self:IsModuleEnabled(name) then list[#list + 1] = name end
+        -- Der Reiter Probe erscheint erst, wenn ein Addon eine Probe angemeldet hat.
+        if self:IsModuleEnabled(name) and (name ~= "Probe" or self:HasProbes()) then list[#list + 1] = name end
     end
     return list
+end
+
+-- Schriftgröße des BugLab-Chatfensters für "console" oder "probe" setzen (Optionen).
+function BugLab:SetChatFontSize(kind, size)
+    self.db.profile.chatFontSize[kind] = size
+    local console = self:GetModule("Console", true)
+    if console and console.ApplyChatFontSize then console:ApplyChatFontSize() end
 end
 
 function BugLab:ShowWindow()

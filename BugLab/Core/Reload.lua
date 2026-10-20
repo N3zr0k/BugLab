@@ -35,6 +35,17 @@ function BugLab:SetupReloadHotkey()
     self.hotkeyFrame = frame
 end
 
+-- Protokolliert jeden Reload (Strg+Umschalt+Alt+R, /reload oder von außen) als Info.
+function BugLab:SetupReloadLog()
+    if self.reloadLogFrame then return end
+    local frame = CreateFrame("Frame", "BugLabReloadLog", UIParent)
+    frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    frame:SetScript("OnEvent", function(_, _, _, isReloadingUi)
+        if isReloadingUi then BugLab:Log("BugLab:Core", BugLab.L["LOG_RELOAD"]) end
+    end)
+    self.reloadLogFrame = frame
+end
+
 -- Ein fokussiertes Eingabefeld nimmt alle Tasten an, der Hotkey-Frame sieht sie dann nicht mehr.
 -- Eingabefelder im BugLab-Fenster geben den Tastendruck deshalb zusätzlich selbst weiter.
 function BugLab:HookReloadKey(editBox)

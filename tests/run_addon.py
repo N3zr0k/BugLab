@@ -281,6 +281,58 @@ def run(locale):
     assert lua.eval('BugLab:LevelIndex("nonsense")') == 2
     assert lua.eval('BugLab:GetLogger("A") == BugLab:GetLogger("A")') is True
     # Logger: eigene Mindeststufe, Abschalten, Werte blau (Warnfarbe läuft nach dem Wert weiter).
+    lua.execute('BugLab:ClearHistory(); BugLab:Log("A", "eins"); BugLab:Log("A:Mod", "zwei"); BugLab:Log("B", "drei")')
+    assert lua.eval('BugLab:ClearHistory("A")') == 2 and lua.eval('#BugLab:GetHistory()') == 1, "clear by source"
+    lua.execute('local C = BugLab:GetModule("Console"); C.state.source = "B"; C:ShowClearDialog(); C.clearDialog.confirm:GetScript("OnClick")(); C.state.source = nil; C:ShowClearDialog(); C.clearDialog:Hide()')
+    assert lua.eval('#BugLab:GetHistory()') >= 0
+    lua.execute('BugLab:ClearHistory(); local a = BugLab:GetLogger("Ank"); a:Announce({ version = "1.2", debug = true }); a:Announce({ version = "9" })')
+    assert lua.eval('#BugLab:GetHistory()') == 1 and "1.2" in lua.eval('BugLab:GetHistory()[1].m'), "announce"
+    # Probes: Anmeldung, Parameter, Start/Stop, eigenes Log, Reiter erst mit Probe sichtbar.
+    assert lua.eval('BugLab:GetProbe("BugLab", "lua-error") ~= nil') is True
+    lua.execute("""
+        _G.probeRan = nil
+        BugLab:ClearHistory(nil, "probe")
+        BugLab:RegisterProbe("TestAddon", "glow", {
+            title = "Leuchten", desc = "Test",
+            params = { { key = "farbe", type = "color" }, { key = "modus", type = "choice", values = { "static", "pulse" } },
+                       { key = "sek", type = "number", default = 10 } },
+            run = function(ctx, p) _G.probeRan = p.farbe .. "/" .. p.modus .. "/" .. p.sek; ctx.log:Info("Farbe %s", p.farbe) end,
+            stop = function(ctx) _G.probeStopped = true end,
+        })
+        BugLab:RegisterProbe("TestAddon", "kaputt", { run = function() error("boom") end })
+    """)
+    assert lua.eval('BugLab:HasProbes()') is True
+    assert "Probe" in lua.eval('table.concat(BugLab:GetVisibleModules(), ",")')
+    assert lua.eval('select(2, BugLab:ParseProbeArgs(BugLab:GetProbe("TestAddon", "glow"), "ff0000"))') is not None
+    lua.execute('BugLab:HandleProbeCommand("TestAddon glow ff0000, pulse 5")')
+    assert lua.eval('_G.probeRan') == "ff0000/pulse/5", lua.eval('_G.probeRan')
+    assert lua.eval('BugLab:IsProbeRunning("TestAddon", "glow")') is True
+    lua.execute('BugLab:HandleProbeCommand("stop TestAddon glow"); BugLab:HandleProbeCommand("TestAddon kaputt"); BugLab:HandleProbeCommand("")')
+    assert lua.eval('_G.probeStopped') is True and lua.eval('BugLab:IsProbeRunning("TestAddon", "glow")') is False
+    assert lua.eval('#BugLab:GetHistory("probe")') >= 4, lua.eval('#BugLab:GetHistory("probe")')
+    assert lua.eval('#BugLab:GetLogSources("probe")') >= 1
+    lua.execute('local C = BugLab:GetModule("Console"); C:GetChatFrame(); C:SetChatKind("probe"); BugLab:SetChatFontSize("probe", 16); C:SetChatKind("console")')
+    assert lua.eval('BugLab.db.profile.chatFontSize.probe') == 16
+    lua.execute('local C = BugLab:GetModule("Console"); C:SetKind("probe"); C:RefreshHistory(); C:SetKind("console")')
+    lua.execute('local P = BugLab:GetModule("Probe"); P:Refresh(); P:UpdateRunning()')
+    assert lua.eval('BugLab:ClearHistory(nil, "probe")') >= 4
+    lua.execute('BugLab:RegisterProbe("TestAddon", "einmal", { mode = "once", run = function(ctx) _G.onceRan = true end })')
+    lua.execute('BugLab:StartProbe("TestAddon", "einmal", {})')
+    assert lua.eval('_G.onceRan') is True and lua.eval('BugLab:IsProbeRunning("TestAddon", "einmal")') is False
+    lua.execute('local P = BugLab:GetModule("Probe"); P:SelectAddon("TestAddon")')
+    lua.execute('local P = BugLab:GetModule("Probe"); P:SelectAddon("BugLab")')
+    assert lua.eval('BugLab:GetModule("Probe"):IsRecentlyDone(BugLab:GetProbe("TestAddon", "einmal"))') is True
+    lua.execute('_G.BugGrabber = { GetDB = function() return { 1, 2, 3 } end, Reset = function() _G.sackReset = true end }; _G.BugSack = nil')
+    assert lua.eval('BugLab:ClearBugSack()') == 3 and lua.eval('_G.sackReset') is True
+    lua.execute('_G.BugGrabber = nil')
+    assert lua.eval('BugLab:ClearBugSack()') is None
+    seg = lua.eval('BugLab:ColorizeSegments("Version: 1 | Debug: an; Rest ||x |cff00ff00gruen|r")')
+    assert "|cff61afef" in seg and "|cff98c379" in seg and "|cffe5c07b" in seg, seg
+    assert "|cff808080||" + "|r" in seg, seg
+    seg2 = lua.eval('BugLab:ColorizeSegments("|cff66bbffA|r | B")')
+    assert "|cff66bbffA" not in seg2.replace("|cff61afef", "") and "|cff61afefA" in seg2, seg2
+    assert "[" not in lua.eval('BugLab:FormatEntry({ t = 1, s = "X", m = "a | b", l = 2 }, true)'), "hideTime"
+    assert lua.eval('BugLab:ColorizeSegments("einfach ohne Trenner")') == "einfach ohne Trenner"
     lua.execute('BugLab:ClearHistory(); local log = BugLab:GetLogger("B"); log:SetLevel("WARN"); log:Info("zu leise"); log:Warn("Zone %s, Ebene %d", "Elwynn", 4); log:SetEnabled(false); log:Error("aus")')
     assert lua.eval('#BugLab:GetHistory()') == 1
     line = lua.eval('BugLab:FormatEntry(BugLab:GetHistory()[1])')
@@ -416,11 +468,27 @@ def run(locale):
         I:StartPick(); I:UpdatePick(); I:MovePick(1); I:ChoosePick()
         I:Select(blizz)
         I:StartPick(true); I:UpdatePick(); I:ChoosePick(); I:MoveLayer(1); I:MoveLayer(-1, true); I:Select(mine); I:ApplyField("color", "FF8000")
+        local _, texProps = BugLab:FormatObjectInfo(out.texinfo)
+        local hasBlend = false
+        for _, pr in pairs(texProps) do if pr.key == "blend" and pr.kind == "enum" then hasBlend = true end end
+        assert(hasBlend, "blend prop missing")
         out.changes = BugLab:ChangesLua()
         assert(out.changes:find("SetPoint", 1, true) and out.changes:find("MeinFrame", 1, true), out.changes)
         I:Select(mine, true); I:ApplyField("y", 3); I:ApplyField("y", -6); I:Select(blizz, true); I:Select(mine); I:ClearSelection()
         BugLab:OnSlashCommand("pick"); I:StopPick()
         I:Select(mine); I:ClearSelection()
+        local G = BugLab:GetModule("Gallery")
+        G:LoadSource(true)
+        G:Select({ kind = "atlas", id = "foo", label = "foo", lower = "foo" })
+        G:Select({ kind = "file", id = 311226, label = "311226", lower = "311226" })
+        G.state.source = "ui"; G:LoadSource(true); G.state.search = "zzz"; G:ApplyFilter(); G:SetSize(80); G:Select(nil)
+        assert(#G.filtered == 0, "gallery filter")
+        I:OpenTextureEditor({ file = 311226 })
+        I.ed.cl, I.ed.cr, I.ed.ct, I.ed.cb = 0.25, 0.75, 0, 0.5
+        I.ed.mask = "circle"; I.ed.zoom = 120; I:EditorChanged()
+        local edCode = I.editorView.codeText
+        assert(edCode:find("SetTexCoord(0.25, 0.75, 0, 0.5)", 1, true) and edCode:find("CreateMaskTexture", 1, true), edCode)
+        I:EditorReset(); I:LoadTexture({ atlas = "foo" }, { 0, 1, 0, 1 }); I:SelectSubTab("details")
         BugLab:SelectTab("Console")
         out.code = BugLab:ExportLua(mine)
         return out.name .. "|" .. out.type .. "|" .. out.owner .. "|" .. out.pts .. "|" .. tostring(out.editMine) .. "|"
@@ -476,7 +544,7 @@ def run(locale):
     assert n >= 3 and any("/bl|r" in v for v in g.CHAT.values()) and any("/buglab pick" in v for v in g.CHAT.values()), list(g.CHAT.values())
     assert g.SlashCmdList["ACECONSOLE_BL"] is not None and g.SlashCmdList["ACECONSOLE_BUGLAB"] is not None
     vis = lua.eval('function() BugLab:SetModuleEnabled("Probe", false); return table.concat(BugLab:GetVisibleModules(), ",") end')()
-    assert vis == "Console,Inspector", vis
+    assert vis == "Console,Inspector,Gallery", vis
     assert g.BugLab.window.selected == "Console", g.BugLab.window.selected
     lua.execute('BugLab:SetModuleEnabled("Probe", true)'), "Slash-Befehl öffnet die Einstellungen nicht"
     assert g.BugLab.db.profile.debug is False

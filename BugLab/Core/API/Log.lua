@@ -20,30 +20,35 @@ function BugLab:LevelIndex(level)
     return LEVEL_INDEX[tostring(level or "INFO"):upper()] or INFO
 end
 
+BugLab.LEVELS_ERROR_INDEX = LEVEL_INDEX.ERROR
 local isModule = {}
 for _, name in ipairs(BugLab.MODULES) do isModule[name] = true end
 
 -- Zeilen vor dem Start der Datenbank werden zwischengespeichert.
 local pending = {}
+local probePending = {}
 
-local function History(self)
-    return self.db and self.db.global.history
+-- Zwei Historien mit gleichem Aufbau: "console" (Standard) und "probe" (Ausgaben der Probes).
+local function History(self, kind)
+    if not self.db then return nil end
+    return kind == "probe" and self.db.global.probeHistory or self.db.global.history
 end
 
 -- Legt eine Zeile ab, ohne Drosselung (auch für zusammengehörige Blöcke wie einen Dump).
-function BugLab:AddEntry(source, text, level)
+function BugLab:AddEntry(source, text, level, kind)
     local entry = {
         t = time(), s = tostring(source or "?"), m = tostring(text),
         i = isModule[source] and true or nil, l = self:LevelIndex(level),
     }
-    local history = History(self)
+    local history = History(self, kind)
     if history then
         history[#history + 1] = entry
-        if #history > MAX_ENTRIES then self:PruneHistory() end
+        if #history > MAX_ENTRIES then self:PruneHistory(nil, kind) end
     else
-        pending[#pending + 1] = entry
+        local queue = kind == "probe" and probePending or pending
+        queue[#queue + 1] = entry
     end
-    self:SendMessage("BUGLAB_LOG", entry)
+    self:SendMessage(kind == "probe" and "BUGLAB_PROBE_LOG" or "BUGLAB_LOG", entry)
     return entry
 end
 
@@ -116,6 +121,22 @@ function Logger:Dump(value, label, level, opts)
     for _, line in ipairs(BugLab:DumpLines(value, opts)) do BugLab:AddEntry(self.source, line, level) end
 end
 
+-- Anmeldung eines Addons: einmal pro Sitzung eine Debug-Zeile mit Version und Debug-Zustand
+-- (log:Announce({ version = "1.2.0", debug = true })). Ohne Version wird sie aus der TOC des Addons gelesen.
+function Logger:Announce(opts)
+    if self.announced then return nil end
+    opts = opts or {}
+    local version = opts.version
+    if not version then
+        local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+        local ok, value = pcall(getMeta, self.source:match("^[^:]+"), "Version")
+        version = ok and value or nil
+    end
+    self.announced = true
+    return BugLab:Log(self.source, BugLab:FormatMessage(BugLab.L["LOG_ANNOUNCE"], version or "?",
+        BugLab.L[opts.debug and "LOG_DEBUG_ON" or "LOG_DEBUG_OFF"]), "DEBUG")
+end
+
 function Logger:SetLevel(level) self.minLevel = BugLab:LevelIndex(level) end
 function Logger:SetEnabled(enabled) self.enabled = enabled and true or false end
 
@@ -125,15 +146,18 @@ function BugLab:FlushPendingLog()
     if not history then return end
     for _, entry in ipairs(pending) do history[#history + 1] = entry end
     wipe(pending)
+    local probeHistory = History(self, "probe")
+    for _, entry in ipairs(probePending) do probeHistory[#probeHistory + 1] = entry end
+    wipe(probePending)
 end
 
-function BugLab:GetHistory()
-    return History(self) or pending
+function BugLab:GetHistory(kind)
+    return History(self, kind) or (kind == "probe" and probePending or pending)
 end
 
 -- Entfernt Zeilen, die älter als die eingestellte Dauer sind (Tage), und kappt auf MAX_ENTRIES.
-function BugLab:PruneHistory(now)
-    local history = History(self)
+function BugLab:PruneHistory(now, kind)
+    local history = History(self, kind)
     if not history then return 0 end
     local cutoff = (now or time()) - self.db.profile.historyDays * DAY
     local first = 1
@@ -148,9 +172,23 @@ function BugLab:PruneHistory(now)
     return removed
 end
 
-function BugLab:ClearHistory()
-    local history = History(self)
-    if history then wipe(history) end
+-- Ohne Argument wird die ganze Historie gelöscht, mit Quelle nur deren Einträge (wie im Filter, "MeinAddon" umfasst
+-- auch "MeinAddon:..."). Gibt die Zahl der gelöschten Einträge zurück.
+function BugLab:ClearHistory(source, kind)
+    local history = History(self, kind)
+    if not history then return 0 end
+    local before = #history
+    if not source then
+        wipe(history)
+        return before
+    end
+    local kept = {}
+    for _, entry in ipairs(history) do
+        if not self:MatchesSource(entry, source) then kept[#kept + 1] = entry end
+    end
+    wipe(history)
+    for i, entry in ipairs(kept) do history[i] = entry end
+    return before - #kept
 end
 
 -- Quellenschlüssel eines Eintrags für den Filter: eigene Module als "BugLab:Console", externe Quellen wie gemeldet
@@ -166,12 +204,12 @@ function BugLab:MatchesSource(entry, selected)
 end
 
 -- Auswahlliste der Quellen in der Historie, alphabetisch; ein Addon mit Unterquellen erscheint zusätzlich als Gruppe.
-function BugLab:GetLogSources()
+function BugLab:GetLogSources(kind)
     local seen, list = {}, {}
     local function add(key)
         if not seen[key] then seen[key] = true; list[#list + 1] = key end
     end
-    for _, entry in ipairs(self:GetHistory()) do
+    for _, entry in ipairs(self:GetHistory(kind)) do
         local key = self:SourceKey(entry)
         add(key)
         local base = key:match("^([^:]+):")
@@ -194,15 +232,85 @@ function BugLab:EntryLevel(entry)
     return entry.l or INFO
 end
 
+-- Getrennte Werte ("a | b | c" oder "a; b; c") erscheinen reihum in unterschiedlichen Farben, damit man sie auseinanderhält.
+-- Ein Trennzeichen "|" gilt nur, wenn es kein Escape des Spiels einleitet (|c, |r, |T, |H, ...); "||" ist ein echtes "|".
+-- Eine Überschrift ("Name: Wert", der Teil vor dem ersten Doppelpunkt) steht in aufgehellter Farbe des Abschnitts.
+-- Palette wie im Datenraster des Screenshots (Regenbogen von Rot bis Lila); Blau steht vorn, Rot zuletzt, damit
+-- gewöhnliche Werte nicht wie Fehler wirken.
+local SEGMENT_COLORS = { "61afef", "98c379", "e5c07b", "c678dd", "56b6c2", "d19a66", "e06c75" }
+local ESCAPE_NEXT = "[cCrRtTaAhHnNkKqQ|]"
+
+local function Lighten(hex)
+    local out = {}
+    for i = 1, 5, 2 do
+        local value = tonumber(hex:sub(i, i + 1), 16)
+        out[#out + 1] = string.format("%02x", math.floor(value + (255 - value) * 0.55))
+    end
+    return table.concat(out)
+end
+
+local function PaintSegment(text, color)
+    local lead, body = text:match("^(%s*)(.-)$")
+    if body == "" then return text end
+    -- Überschrift: kurzer Text vor dem ersten Doppelpunkt, nur wenn kein Escape davor steht.
+    local head, rest = body:match("^([^:|]-:)(.*)$")
+    local inner = body
+    if head and #head <= 28 then
+        local bright = Lighten(color)
+        inner = "|cff" .. bright .. head .. "|r|cff" .. color .. rest:gsub("|r", "|r|cff" .. color)
+    else
+        inner = body:gsub("|r", "|r|cff" .. color)
+    end
+    return lead .. "|cff" .. color .. inner .. "|r"
+end
+
+function BugLab:ColorizeSegments(text)
+    -- Vorhandene Farben (z. B. blaue Werte aus FormatMessage) würden die Abschnittsfarbe überdecken: zuerst entfernen.
+    local original = text
+    text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    local segments, separators, start, i = {}, {}, 1, 1
+    while i <= #text do
+        local char = text:sub(i, i)
+        if char == ";" or (char == "|" and not text:sub(i + 1, i + 1):match(ESCAPE_NEXT)) then
+            segments[#segments + 1] = text:sub(start, i - 1)
+            separators[#separators + 1] = char
+            start = i + 1
+        elseif char == "|" then
+            i = i + 1 -- zweites Zeichen des Escapes überspringen
+        end
+        i = i + 1
+    end
+    if #segments == 0 then return original end
+    segments[#segments + 1] = text:sub(start)
+    local out = {}
+    for index, segment in ipairs(segments) do
+        out[#out + 1] = PaintSegment(segment, SEGMENT_COLORS[(index - 1) % #SEGMENT_COLORS + 1])
+        -- Ein "|" muss als "||" ausgegeben werden, sonst läse das Spiel das folgende "|r" als Text.
+        if separators[index] then out[#out + 1] = "|cff808080" .. (separators[index] == "|" and "||" or separators[index]) .. "|r" end
+    end
+    return table.concat(out)
+end
+
+-- "[HH:MM:SS] {Käfer Name} " (ohne Uhrzeit, wenn hideTime gesetzt ist).
+function BugLab:EntryPrefix(entry, hideTime)
+    return (hideTime and "" or (self:Paint("GRAY", date("[%H:%M:%S]", entry.t)) .. " ")) .. self:FormatSource(self:SourceKey(entry)) .. " "
+end
+
 -- [HH:MM:SS] {Käfer Name} Text, der Text in der Farbe der Stufe.
-function BugLab:FormatEntry(entry)
+function BugLab:FormatEntry(entry, hideTime)
     local color = self.LEVEL_COLORS[self.LEVELS[self:EntryLevel(entry)]]
     local text = entry.m
+    -- Fehler und Fatal behalten ihre Stufenfarbe; sonst werden getrennte Werte reihum eingefärbt.
+    local level = self:EntryLevel(entry)
+    if level < self.LEVELS_ERROR_INDEX then
+        local colored = self:ColorizeSegments(text)
+        if colored ~= text then return self:EntryPrefix(entry, hideTime) .. colored end
+    end
     if color then
         -- Eingebettete Werte (blau) beenden ihre Farbe mit |r; danach geht die Stufenfarbe weiter.
         text = "|cff" .. color .. text:gsub("|r", "|r|cff" .. color) .. "|r"
     end
-    return self:Paint("GRAY", date("[%H:%M:%S]", entry.t)) .. " " .. self:FormatSource(self:SourceKey(entry)) .. " " .. text
+    return self:EntryPrefix(entry, hideTime) .. text
 end
 
 -- Datumszeile der Historie, hell und klar.

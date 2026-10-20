@@ -59,7 +59,7 @@ local function GetOptions()
                         get = function() return BugLab.db.profile.historyDays end,
                         set = function(_, v)
                             BugLab.db.profile.historyDays = v
-                            BugLab:PruneHistory()
+                            BugLab:PruneHistory(); BugLab:PruneHistory(nil, "probe")
                         end,
                     },
                     logRateLimit = {
@@ -67,6 +67,18 @@ local function GetOptions()
                         name = L["OPT_RATE"], desc = L["OPT_RATE_DESC"],
                         get = function() return BugLab.db.profile.logRateLimit end,
                         set = function(_, v) BugLab.db.profile.logRateLimit = v end,
+                    },
+                    chatFontConsole = {
+                        type = "range", order = 6, width = "double", min = 8, max = 24, step = 1,
+                        name = L["OPT_CHAT_FONT_CONSOLE"], desc = L["OPT_CHAT_FONT_DESC"],
+                        get = function() return BugLab.db.profile.chatFontSize.console end,
+                        set = function(_, v) BugLab:SetChatFontSize("console", v) end,
+                    },
+                    chatFontProbe = {
+                        type = "range", order = 7, width = "double", min = 8, max = 24, step = 1,
+                        name = L["OPT_CHAT_FONT_PROBE"], desc = L["OPT_CHAT_FONT_DESC"],
+                        get = function() return BugLab.db.profile.chatFontSize.probe end,
+                        set = function(_, v) BugLab:SetChatFontSize("probe", v) end,
                     },
                     minimap = {
                         type = "toggle", order = 2, width = "full",

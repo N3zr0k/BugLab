@@ -3,7 +3,14 @@ local BugLab = _G.BugLab
 local L = BugLab.L
 local Console = BugLab:NewModule("Console", "AceEvent-3.0")
 
+-- Ein eigenes, abgedocktes Chatfenster "BugLab" mit zwei Reitern: BugLab:Debug (Console) und BugLab:Probes. Die Reiter
+-- schaltet BugLab selbst um (Blizzard kennt kein Andocken mehrerer Reiter per Code): gezeigt wird immer ein Log, das
+-- andere steht weiter in der Historie und erscheint beim Umschalten (Zeilen von heute).
 local CHAT_NAME = "BugLab"
+local OLD_CHAT_NAMES = { ["BugLab:Debug"] = true } -- Namen früherer Versionen (werden umbenannt)
+local CHAT_KINDS = { "console", "probe" }
+local CHAT_TAB_LABEL = { console = "BugLab:Debug", probe = "BugLab:Probes" }
+local CHAT_REPLAY_MAX = 500
 local MAX_LINES = 3000
 local CHAT_MAX_LINES = 2000
 -- Gemeinsame Bedienelemente (Core/UI.lua): Standardhöhe, Entfärben, Knöpfe im BugLab-Stil.
@@ -13,49 +20,117 @@ local TIME_RANGE_KEYS = { hour = "RANGE_HOUR", h3 = "RANGE_H3", h12 = "RANGE_H12
 
 -- Chatfenster ---------------------------------------------------------------------------------------------------
 
--- Sucht das Chatfenster "BugLab" oder legt es an; es erhält keine normalen Chatnachrichten.
+-- Löst das Fenster aus dem allgemeinen Chat (wie Reiter wegziehen) und setzt es an eine feste Stelle. Meldet im
+-- Debug-Log, wenn es danach noch angedockt ist, mit den Fehlern der Aufrufe.
+function Console:DetachChat(frame)
+    local errors = {}
+    local function try(fn, ...)
+        local ok, err = pcall(fn, ...)
+        if not ok then errors[#errors + 1] = tostring(err) end
+    end
+    if FCF_UnDockFrame then try(FCF_UnDockFrame, frame) else errors[#errors + 1] = "FCF_UnDockFrame fehlt" end
+    try(function()
+        frame:ClearAllPoints()
+        frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 60, 220)
+        frame:SetSize(430, 200)
+    end)
+    if FCF_SavePositionAndDimensions then try(FCF_SavePositionAndDimensions, frame) end
+    if FCF_DockUpdate then try(FCF_DockUpdate) end
+    if frame.isDocked then
+        BugLab:AddEntry("BugLab:Console", L["CHAT_DETACH_FAILED"]:format(tostring(frame.isDocked), table.concat(errors, "; ")), "WARN")
+    end
+end
+
+-- Benennt ein Fenster um und aktualisiert den Text seines Reiters (je nach Version reicht FCF_SetWindowName nicht).
+function Console:RenameChat(frame, id)
+    if FCF_SetWindowName then pcall(FCF_SetWindowName, frame, CHAT_NAME) end
+    if SetChatWindowName then pcall(SetChatWindowName, id, CHAT_NAME) end
+    local tab = _G["ChatFrame" .. id .. "Tab"]
+    if tab and tab.SetText then tab:SetText(CHAT_NAME) end
+end
+
+-- Schließt ein Chatfenster; hilft FCF_Close nicht, wird es ausgeblendet und als "nicht angezeigt" gespeichert.
+function Console:CloseChat(frame, id)
+    if not frame then return end
+    if FCF_Close then pcall(FCF_Close, frame) end
+    if frame.IsShown and frame:IsShown() then
+        if SetChatWindowShown then pcall(SetChatWindowShown, id, false) end
+        frame:Hide()
+        local tab = _G["ChatFrame" .. id .. "Tab"]
+        if tab and tab.Hide then tab:Hide() end
+    end
+end
+
+-- Sucht das Chatfenster "BugLab" oder legt es an (abgedockt, einmalig); es erhält keine normalen Chatnachrichten.
 function Console:GetChatFrame()
     if self.chatFrame then return self.chatFrame end
+    -- Warnungen beim Anlegen lösen selbst eine Chatausgabe aus: nicht erneut anlegen.
+    if self.chatBuilding then return nil end
+    self.chatBuilding = true
+    self.chatKind = self.chatKind or "console"
     local frame
     for i = 1, NUM_CHAT_WINDOWS or 0 do
-        if GetChatWindowInfo(i) == CHAT_NAME then frame = _G["ChatFrame" .. i]; break end
+        local existing = GetChatWindowInfo(i)
+        if existing == CHAT_NAME or OLD_CHAT_NAMES[existing] then
+            frame = _G["ChatFrame" .. i]
+            if existing ~= CHAT_NAME then self:RenameChat(frame, i) end
+        elseif existing == "BugLab:Probes" then
+            self:CloseChat(_G["ChatFrame" .. i], i) -- zweites Fenster früherer Versionen: nicht mehr nötig
+        end
     end
     if not frame then
         local ok, created = pcall(FCF_OpenNewWindow, CHAT_NAME)
-        if not ok then return nil end
+        if not ok or not created then
+            -- Nicht still scheitern: einmal im Debug-Log melden.
+            if not self.chatFailed then
+                self.chatFailed = true
+                BugLab:AddEntry("BugLab:Console", L["CHAT_TAB_FAILED"]:format(CHAT_NAME, tostring(created)), "WARN")
+            end
+            self.chatBuilding = nil
+            return nil
+        end
         frame = created
     end
-    if frame and not self.chatFrameClean then
+    if frame and not self.chatClean then
         if ChatFrame_RemoveAllMessageGroups then ChatFrame_RemoveAllMessageGroups(frame) end
         if ChatFrame_RemoveAllChannels then ChatFrame_RemoveAllChannels(frame) end
-        self.chatFrameClean = true
+        self.chatClean = true
     end
     if frame and frame.SetMaxLines then frame:SetMaxLines(CHAT_MAX_LINES) end -- genug Platz zum Zurückscrollen
-    -- Das Chatfenster gehört dem Spiel: ein Fehler beim Anbringen des Knopfs darf die Ausgabe nicht stoppen.
+    -- Vom Standardfenster lösen: ein docked Fenster hängt als Reiter im allgemeinen Chat; BugLab will ein eigenes.
+    if frame and frame.isDocked then self:DetachChat(frame) end
+    -- Das Chatfenster gehört dem Spiel: ein Fehler beim Anbringen der Bedienelemente darf die Ausgabe nicht stoppen.
     if frame and not self.historyButton then
         local ok, button = pcall(self.AddHistoryButton, self, frame)
         self.historyButton = ok and button or false
+        pcall(self.AddChatTabs, self, frame)
     end
     self.chatFrame = frame
+    self.chatBuilding = nil
+    self:ApplyChatFontSize()
+    self:ReplayChat()
     return frame
 end
 
 -- Kleiner blauer Käfer in der Ecke des Chatfensters: öffnet die Historie im BugLab-Fenster.
 local HISTORY_BUTTON_SIZE = 18
 
+-- Prat legt eigene Knöpfe an den rechten Rand: Käfer und Reiter rücken dann 30 Pixel nach links.
+local function PRAT_SHIFT() return BugLab:IsPratLoaded() and 30 or 0 end
+
 function Console:AddHistoryButton(frame)
     local button = CreateFrame("Button", nil, frame)
     button:SetSize(HISTORY_BUTTON_SIZE, HISTORY_BUTTON_SIZE)
     -- Über dem Chatfenster am rechten Rand (Höhe der Reiterleiste): verdeckt keinen Text und kollidiert nicht mit dem
     -- Kopier-Symbol unten rechts.
-    button:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", -2, 4)
+    button:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", -2 - PRAT_SHIFT(), 4)
     button:SetFrameLevel(frame:GetFrameLevel() + 10)
     local icon = button:CreateTexture(nil, "ARTWORK")
     icon:SetAllPoints()
     icon:SetTexture(BugLab.MEDIA_PATH .. "BugLab_Beetle_Outlined_32")
     icon:SetAlpha(1)
-    button:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    button:SetScript("OnEnter", function(owner)
+        GameTooltip:SetOwner(owner, "ANCHOR_LEFT")
         GameTooltip:SetText(BugLab.NAME_COLORED)
         GameTooltip:AddLine(L["CHAT_OPEN_HISTORY"], 1, 1, 1)
         GameTooltip:Show()
@@ -68,6 +143,74 @@ function Console:AddHistoryButton(frame)
     return button
 end
 
+-- Reiter im Chatfenster (links neben dem Käfer): Debug und Probes.
+function Console:AddChatTabs(frame)
+    self.chatTabs = {}
+    local previous
+    -- Von rechts nach links anlegen: Probes ganz rechts, Debug links davon.
+    for i = #CHAT_KINDS, 1, -1 do
+        local kind = CHAT_KINDS[i]
+        local tab = CreateFrame("Button", nil, frame)
+        tab:SetSize(92, 18)
+        tab:SetFrameLevel(frame:GetFrameLevel() + 10)
+        -- Rechts über dem Fenster, links vom Käfer: der Reiter des Spiels bleibt links frei.
+        if previous then tab:SetPoint("RIGHT", previous, "LEFT", -2, 0) else tab:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", -24 - PRAT_SHIFT(), 4) end
+        tab.bg = tab:CreateTexture(nil, "BACKGROUND")
+        tab.bg:SetAllPoints()
+        tab.bg:SetColorTexture(0, 0, 0, 0.55)
+        tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        tab.text:SetAllPoints()
+        tab.kind = kind
+        tab:SetScript("OnClick", function() self:SetChatKind(kind) end)
+        self.chatTabs[kind] = tab
+        previous = tab
+    end
+    self:UpdateChatTabs()
+end
+
+function Console:UpdateChatTabs()
+    for kind, tab in pairs(self.chatTabs or {}) do
+        local active = kind == self.chatKind
+        tab.text:SetText(BugLab:Paint(active and "BRIGHTBLUE" or "GRAY", CHAT_TAB_LABEL[kind]))
+        tab.bg:SetColorTexture(active and 0.1 or 0, active and 0.2 or 0, active and 0.3 or 0, 0.7)
+    end
+end
+
+-- Zeigt das gewählte Log neu: Fenster leeren, Zeilen von heute (zuletzt höchstens CHAT_REPLAY_MAX) nachtragen.
+function Console:ReplayChat()
+    local frame = self.chatFrame
+    if not (frame and frame.AddMessage) then return end
+    if frame.Clear then frame:Clear() end
+    self.chatDay = nil
+    local today, lines = BugLab:DayOf(time()), {}
+    for _, entry in ipairs(BugLab:GetHistory(self.chatKind)) do
+        if BugLab:DayOf(entry.t) == today then lines[#lines + 1] = entry end
+    end
+    for i = math.max(1, #lines - CHAT_REPLAY_MAX + 1), #lines do self:AddToChat(frame, lines[i]) end
+end
+
+-- Schriftgröße des BugLab-Fensters (nur dieses Fenster; die übrigen Chatfenster bleiben unberührt). Jedes Log hat
+-- seine eigene Größe, sie gilt, solange es im Fenster gezeigt wird.
+function Console:ApplyChatFontSize()
+    local frame = self.chatFrame
+    local sizes = BugLab.db and BugLab.db.profile.chatFontSize
+    local size = sizes and sizes[self.chatKind]
+    if not (frame and size) then return end
+    if FCF_SetChatWindowFontSize then
+        pcall(FCF_SetChatWindowFontSize, nil, frame, size)
+    elseif frame.GetFont and frame.SetFont then
+        local face, _, flags = frame:GetFont()
+        if face then pcall(frame.SetFont, frame, face, size, flags) end
+    end
+end
+
+function Console:SetChatKind(kind)
+    self.chatKind = kind
+    self:UpdateChatTabs()
+    self:ApplyChatFontSize()
+    self:ReplayChat()
+end
+
 -- Schreibt einen Eintrag in das Chatfenster, bei Tageswechsel mit Datumszeile davor (wie in der Historie).
 function Console:AddToChat(frame, entry)
     local day = BugLab:DayOf(entry.t)
@@ -75,23 +218,21 @@ function Console:AddToChat(frame, entry)
         frame:AddMessage(BugLab:FormatDay(entry.t))
         self.chatDay = day
     end
-    frame:AddMessage(BugLab:FormatEntry(entry))
+    -- Prat zeigt schon eine Uhrzeit: die eigene entfällt dann im Chat (nicht in der Historie).
+    frame:AddMessage(BugLab:FormatEntry(entry, BugLab:IsPratLoaded()))
 end
 
--- Beim ersten Öffnen des Fensters werden die Zeilen von heute nachgetragen, damit es wie die Historie aussieht.
-function Console:OnLogEntry(_, entry)
+-- Neue Zeile: erscheint nur, wenn ihr Log gerade im Chatfenster gezeigt wird. Legt der Eintrag das Fenster erst an, steht
+-- er schon in dem, was beim Anlegen nachgetragen wird.
+function Console:OnChatEntry(entry, kind)
+    local fresh = not self.chatFrame
     local frame = self:GetChatFrame()
-    if not (frame and frame.AddMessage) then return end
-    if not self.chatReplayed then
-        self.chatReplayed = true
-        local today = BugLab:DayOf(time())
-        for _, old in ipairs(BugLab:GetHistory()) do
-            if BugLab:DayOf(old.t) == today then self:AddToChat(frame, old) end
-        end
-        return -- der neue Eintrag steht bereits in der Historie
-    end
-    self:AddToChat(frame, entry)
+    if not (frame and frame.AddMessage) or fresh then return end
+    if kind == self.chatKind then self:AddToChat(frame, entry) end
 end
+
+function Console:OnLogEntry(_, entry) self:OnChatEntry(entry, "console") end
+function Console:OnProbeEntry(_, entry) self:OnChatEntry(entry, "probe") end
 
 -- Historie im BugLab-Fenster -----------------------------------------------------------------------------------------
 
@@ -109,7 +250,7 @@ function Console:RefreshHistory()
     if not view then return end
     local now, terms = time(), BugLab:ParseFilter(self.state.text)
     local lines, shown, total, lastDay = {}, 0, 0, nil
-    for _, entry in ipairs(BugLab:GetHistory()) do
+    for _, entry in ipairs(BugLab:GetHistory(self.state.kind)) do
         total = total + 1
         if self:Passes(entry, terms, now) then
             shown = shown + 1
@@ -129,7 +270,7 @@ function Console:RefreshHistory()
     view.text:SetText(view.text.content)
     -- erst nach dem Layout ans Ende, damit die neuesten Zeilen sichtbar sind
     C_Timer.After(0, function() view.log:SetVerticalScroll(view.log:GetVerticalScrollRange()) end)
-    view.count:SetText(BugLab:Paint("GRAY", L["HISTORY_COUNT"]:format(
+    view.count:SetText(BugLab:Paint("BRIGHTBLUE", L[self.state.kind == "probe" and "KIND_PROBE" or "KIND_CONSOLE"]) .. BugLab:Paint("GRAY", "  " .. L["HISTORY_COUNT"]:format(
         BugLab:Paint("BRIGHTBLUE", shown), BugLab:Paint("BRIGHTBLUE", total))))
 end
 
@@ -138,9 +279,12 @@ local DEFAULT_STATE = { range = "all", text = "", level = 1 }
 
 function Console:GetOptions(field)
     local list = {}
-    if field == "source" then
+    if field == "kind" then
+        list[1] = { "console", L["KIND_CONSOLE"] }
+        list[2] = { "probe", L["KIND_PROBE"] }
+    elseif field == "source" then
         list[1] = { nil, L["FILTER_ALL"] }
-        for _, name in ipairs(BugLab:GetLogSources()) do list[#list + 1] = { name, name } end
+        for _, name in ipairs(BugLab:GetLogSources(self.state.kind)) do list[#list + 1] = { name, name } end
     elseif field == "range" then
         -- Dritter Eintrag: Kurztext für den Button (Auswahlliste zeigt den Langtext).
         for _, key in ipairs(BugLab.TIME_RANGES) do list[#list + 1] = { key, L[TIME_RANGE_KEYS[key]], L[TIME_RANGE_KEYS[key] .. "_SHORT"] } end
@@ -154,8 +298,8 @@ function Console:GetOptions(field)
     return list
 end
 
-local FIELD_LABEL = { source = "FILTER_SOURCE", range = "FILTER_RANGE", level = "FILTER_LEVEL" }
-local FIELD_TIP = { source = "TIP_SOURCE", range = "TIP_RANGE", level = "TIP_LEVEL" }
+local FIELD_LABEL = { kind = "FILTER_KIND", source = "FILTER_SOURCE", range = "FILTER_RANGE", level = "FILTER_LEVEL" }
+local FIELD_TIP = { kind = "TIP_KIND", source = "TIP_SOURCE", range = "TIP_RANGE", level = "TIP_LEVEL" }
 
 -- Kurztext des frei gewählten Zeitraums, z. B. "01.10.-05.10."; ohne Auswahl "Custom".
 function Console:CustomRangeText()
@@ -476,7 +620,6 @@ end
 function Console:OnCalendarInput(field)
     local cal = self.calendar
     cal.pending = false
-    local from, to = ParseRange(cal.sd.digits, cal.st.digits, cal.ed.digits, cal.et.digits)
     local day1 = ParseDate(cal.sd.digits)
     local day2 = cal.ed.digits == "" and day1 or ParseDate(cal.ed.digits)
     cal.typed = (day1 and day2) and { math.min(day1, day2), math.max(day1, day2) } or false
@@ -527,6 +670,7 @@ function Console:PickDay(stamp)
 end
 
 function Console:SetFilter(field, value)
+    if field == "kind" then return self:SetKind(value) end
     self.state[field] = value
     self:UpdateFilterControls()
     self:RefreshHistory()
@@ -602,6 +746,7 @@ end
 
 -- Schnellauswahl für den Zeitraum in einem Button-Rahmen: "1h 3h 12h 1d 3d 7d Alles Custom [Kalender]"; aktiv = blau,
 -- sonst grau, Hover weiß. Custom öffnet den Kalender und zeigt danach den gewählten Zeitraum.
+local KIND_WIDTH = 140 -- Auswahl des Logs (Debug/Probe) vor der Quelle
 local RANGE_PAD = 8
 local RANGE_CUSTOM_WIDTH, RANGE_SHORT_MAX, RANGE_SHORT_MIN = 112, 34, 24
 local RANGE_HEIGHT = ROW_HEIGHT + 6 -- Der sichtbare Rahmen der Eingabevorlage ist kleiner als sein Frame: so wirkt er so hoch wie die Auswahllisten
@@ -649,8 +794,10 @@ function Console:CreateRangeBar(parent)
         item.text = item:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         -- Schrift exakt wie im Dropdown daneben.
         local dropdownText = self.view and self.view.source and self.view.source.Text
-        local path, size, flags = dropdownText and dropdownText.GetFont and dropdownText:GetFont()
-        if path and size then item.text:SetFont(path, size, flags) end
+        if dropdownText and dropdownText.GetFont then
+            local path, size, flags = dropdownText:GetFont()
+            if path and size then item.text:SetFont(path, size, flags) end
+        end
         if key == "custom" then
             item.icon = CalendarIcon(item)
             item.icon:SetPoint("RIGHT", 0, 0)
@@ -701,7 +848,7 @@ end
 function Console:UpdateFilterControls()
     local view = self.view
     self:UpdateRangeBar()
-    for _, field in ipairs({ "source", "level" }) do
+    for _, field in ipairs({ "kind", "source", "level" }) do
         local control = view[field]
         local label = self:FilterLabel(field)
         if control.SetDefaultText then
@@ -715,6 +862,74 @@ function Console:UpdateFilterControls()
 end
 
 -- Alle Filter zurücksetzen (Quelle, Zeitraum, Stufe, Text).
+-- Rückfrage vor dem Löschen: entweder nur die gewählte Quelle oder alle, danach "Jetzt löschen".
+function Console:ShowClearDialog()
+    local dialog = self.clearDialog
+    if not dialog then
+        dialog = CreateFrame("Frame", "BugLabClearDialog", UIParent)
+        dialog:SetFrameStrata("FULLSCREEN_DIALOG")
+        dialog:SetToplevel(true)
+        dialog:SetClampedToScreen(true)
+        dialog:EnableMouse(true)
+        dialog:SetSize(380, 190)
+        dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+        local solid = dialog:CreateTexture(nil, "BACKGROUND", nil, -8)
+        solid:SetColorTexture(0.05, 0.05, 0.06, 1)
+        solid:SetPoint("TOPLEFT", 2, -2)
+        solid:SetPoint("BOTTOMRIGHT", -2, 2)
+        BugLab:SkinFrame(dialog)
+        dialog.title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        dialog.title:SetPoint("TOP", 0, -3)
+        dialog.title:SetText(BugLab:Paint("WHITE", L["CLEAR_TITLE"]))
+        BugLab.CreateCloseButton(dialog, true)
+        -- Warnung rot und hervorgehoben (WoW kennt keine kursive Schrift, "fett" kommt über den dicken Rand).
+        dialog.warn = dialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        local face, size = GameFontHighlight:GetFont()
+        if face then dialog.warn:SetFont(face, size, "THICKOUTLINE") end
+        dialog.warn:SetPoint("TOPLEFT", 20, -40)
+        dialog.warn:SetWidth(340)
+        dialog.warn:SetJustifyH("LEFT")
+        dialog.warn:SetText("|A:Ping_Wheel_Icon_Warning_Small:18:18|a " .. BugLab:Paint("ERROR", L["CLEAR_WARN"]))
+        dialog.options = {}
+        local function Choose(key)
+            dialog.choice = key
+            for name, check in pairs(dialog.options) do check:SetChecked(name == key) end
+        end
+        local function Option(key, y)
+            local check = CreateFrame("CheckButton", nil, dialog, "UICheckButtonTemplate")
+            check:SetPoint("TOPLEFT", 14, y)
+            check.label = dialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            check.label:SetPoint("LEFT", check, "RIGHT", 2, 0)
+            check:SetScript("OnClick", function() Choose(key) end)
+            dialog.options[key] = check
+            return check
+        end
+        Option("source", -68)
+        Option("all", -98).label:SetText(L["CLEAR_ALL"])
+        dialog.Choose = Choose
+        dialog.confirm = Button(dialog, L["CLEAR_NOW"], 140, function()
+            local source = dialog.choice == "source" and self.state.source or nil
+            local removed = BugLab:ClearHistory(source, self.state.kind)
+            dialog:Hide()
+            self:RefreshHistory()
+            BugLab:Log("BugLab:Console", L["CLEAR_DONE"]:format(removed), "INFO")
+        end, true)
+        dialog.confirm:SetPoint("BOTTOM", 0, 18)
+        self.clearDialog = dialog
+    end
+    local source = self.state.source
+    local sourceOption = dialog.options.source
+    sourceOption.label:SetText(source and (L["CLEAR_SELECTED"] .. " " .. BugLab:Paint("BRIGHTBLUE", source)) or BugLab:Paint("GRAY", L["CLEAR_SELECTED_NONE"]))
+    sourceOption:SetEnabled(source ~= nil)
+    dialog.Choose(source and "source" or "all")
+    dialog:Show()
+end
+
+function Console:SetKind(kind)
+    self.state.kind = kind
+    self:ClearFilters()
+end
+
 function Console:ClearFilters()
     for key, value in pairs(DEFAULT_STATE) do self.state[key] = value end
     self.state.source, self.state.from, self.state.to = nil, nil, nil
@@ -727,11 +942,28 @@ function Console:BuildHistory()
     local page = BugLab:GetPage("Console")
     local view = { page = page }
     self.view = view
-    self.state = {}
+    self.state = { kind = "console" }
     for key, value in pairs(DEFAULT_STATE) do self.state[key] = value end
 
-    view.clear = Button(page, L["CLEAR"], 90, function() BugLab:ClearHistory(); self:RefreshHistory() end, true)
+    -- Symbolknopf; die Rückfrage (Quelle oder alles) steht im Dialog.
+    view.clear = CreateFrame("Button", nil, page)
+    view.clear:SetSize(ROW_HEIGHT, ROW_HEIGHT)
     view.clear:SetPoint("TOPRIGHT", -6, -6)
+    view.clear.icon = view.clear:CreateTexture(nil, "ARTWORK")
+    view.clear.icon:SetAllPoints()
+    view.clear.icon:SetAtlas("128-RedButton-Delete")
+    view.clear.glow = view.clear:CreateTexture(nil, "HIGHLIGHT")
+    view.clear.glow:SetAllPoints()
+    view.clear.glow:SetAtlas("128-RedButton-Delete")
+    view.clear.glow:SetBlendMode("ADD")
+    view.clear:SetScript("OnClick", function() self:ShowClearDialog() end)
+    view.clear:SetScript("OnEnter", function(button)
+        GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+        GameTooltip:SetText(L["CLEAR_TITLE"], 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    view.clear:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    view.kind = self:CreateFilterControl(page, "kind", KIND_WIDTH)
     view.source = self:CreateFilterControl(page, "source", 150)
     view.range = self:CreateRangeBar(page)
     view.level = self:CreateFilterControl(page, "level", 130)
@@ -753,12 +985,13 @@ function Console:BuildHistory()
     row:SetPoint("RIGHT", view.filter, "RIGHT", 0, 0)
     view.level:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
     view.range:SetPoint("RIGHT", view.level, "LEFT", -10, 0)
-    view.source:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    view.kind:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    view.source:SetPoint("LEFT", view.kind, "RIGHT", 10, 0)
     -- Platz verteilen: erst die Kurzwerte der Leiste verengen, dann die Stufe schmaler, zuletzt die Quelle (min. 90).
     row:SetScript("OnSizeChanged", function(_, width)
         local level = 130
         local function fit(levelWidth)
-            local avail = width - 20 - 90 - levelWidth -- Platz für die Leiste bei kleinster Quelle
+            local avail = width - 30 - KIND_WIDTH - 90 - levelWidth -- Platz für die Leiste bei kleinster Quelle
             for short = RANGE_SHORT_MAX, RANGE_SHORT_MIN, -1 do
                 if view.range.WidthFor(short) <= avail then return short end
             end
@@ -767,7 +1000,7 @@ function Console:BuildHistory()
         if not short then level = 110; short = fit(level) or RANGE_SHORT_MIN end
         view.level:SetWidth(level)
         view.range.Layout(short)
-        view.source:SetWidth(math.max(90, math.min(150, width - view.range:GetWidth() - level - 20)))
+        view.source:SetWidth(math.max(90, math.min(150, width - view.range:GetWidth() - level - KIND_WIDTH - 30)))
     end)
     view.filter:SetAutoFocus(false)
     BugLab:HookReloadKey(view.filter)
@@ -812,5 +1045,10 @@ end
 function Console:OnEnable()
     if not self.view then self:BuildHistory() end
     self:RegisterMessage("BUGLAB_LOG", "OnLogEntry")
+    self:RegisterMessage("BUGLAB_PROBE_LOG", "OnProbeEntry")
     BugLab:Log("Console", L["CONSOLE_READY"]:format(#BugLab:GetHistory()))
+    -- Das Chatfenster mit beiden Reitern gleich nach dem Login anlegen, nicht erst bei der ersten Zeile.
+    C_Timer.After(1, function()
+        self:GetChatFrame()
+    end)
 end
