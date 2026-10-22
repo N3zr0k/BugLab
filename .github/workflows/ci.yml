@@ -10,6 +10,13 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      retry_curseforge:
+        description: 'CurseForge-Upload für bestehendes Beta-/Final-Release wiederholen'
+        required: false
+        type: boolean
+        default: false
 
 env:
   ADDON: BugLab
@@ -71,7 +78,7 @@ jobs:
   # Tag + Release, nur auf dem Standardbranch und nur, wenn die TOC-Version neu ist.
   release:
     needs: [version, lint, test, package]
-    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -102,24 +109,43 @@ jobs:
           gh release create "$TAG" "${ADDON}_${VERSION}.zip" --target "$GITHUB_SHA" --title "$TITLE" --notes-file notes.md $FLAGS
           echo "created=true" >> "$GITHUB_OUTPUT"
 
-  # CurseForge: nur beta und final, nur wenn dieser Lauf ein neues Release erstellt hat.
+  # CurseForge: automatisch bei neuen beta/final Releases; Retry manuell via Actions.
   curseforge:
     needs: [version, release]
-    if: needs.release.outputs.created == 'true' && needs.version.outputs.stage != 'alpha'
+    if: >-
+      needs.release.result == 'success' &&
+      needs.version.outputs.stage != 'alpha' &&
+      (needs.release.outputs.created == 'true' ||
+       (github.event_name == 'workflow_dispatch' && inputs.retry_curseforge == true))
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       VERSION: ${{ needs.version.outputs.version }}
       STAGE: ${{ needs.version.outputs.stage }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: addon-zip
-      - env:
+      # Immer das ZIP aus dem GitHub-Release nutzen, damit Retry exakt dasselbe Paket hochlädt.
+      - name: Download GitHub release asset
+        run: gh release download "v$VERSION" --pattern "${ADDON}_${VERSION}.zip" --dir . --clobber
+      - name: Upload to CurseForge
+        env:
           CURSEFORGE_API_TOKEN: ${{ secrets.CF_API_KEY }}
           GAME_VERSION_ID: ${{ vars.CURSEFORGE_GAME_VERSION_ID }}
         run: |
-          test -n "$CURSEFORGE_API_TOKEN" && test -n "$GAME_VERSION_ID" || { echo "CurseForge-Zugangsdaten fehlen"; exit 1; }
+          if [ -z "$CURSEFORGE_API_TOKEN" ]; then
+            echo "::error::GitHub Secret CF_API_KEY fehlt"
+            exit 1
+          fi
+          if [ -z "$GAME_VERSION_ID" ]; then
+            echo "::error::GitHub Variable CURSEFORGE_GAME_VERSION_ID fehlt"
+            exit 1
+          fi
+          if ! [[ "$GAME_VERSION_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::CURSEFORGE_GAME_VERSION_ID muss eine numerische ID sein"
+            exit 1
+          fi
           NOTES=$(awk -v v="## $VERSION" '$0 ~ "^## " { p = ($0 == v) } p && $0 != v' CHANGELOG.md)
           TYPE=release; [ "$STAGE" = "beta" ] && TYPE=beta
           jq -n --arg notes "$NOTES" --arg name "$ADDON $VERSION" --arg type "$TYPE" --argjson gv "$GAME_VERSION_ID" \
