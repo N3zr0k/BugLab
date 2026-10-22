@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.48-beta.1
+- Code: luacheck warning W311 fixed in Log.lua (unused initial value of `inner`).
+
 ## 0.1.47-alpha.1
 - Inspector: Blizzard UI elements (micro menu, bag icons ...) can now be moved and resized like your own frames, so the "Changes" view gives the right position and size code. New option "Change Blizzard elements in the Inspector" (on by default; switch it off if actions get blocked). Protected elements stay locked in combat; changes last until /reload.
 

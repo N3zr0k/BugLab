@@ -6,7 +6,7 @@
 ## Category-deDE: Entwicklungstools
 ## X-Category: Development Tools
 ## Author: N3zr0k
-## Version: 0.1.47-alpha.1
+## Version: 0.1.48-beta.1
 ## IconTexture: Interface\AddOns\BugLab\Media\BugLab_Logo_RoundedCorners_128
 ## SavedVariables: BugLabSettings
 ## X-License: All Rights Reserved

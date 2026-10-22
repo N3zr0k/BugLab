@@ -5,7 +5,7 @@
 - Version und Infos werden aus der TOC gelesen (`BugLab:GetMeta(field)`).
 - Globales Addon-Objekt: `BugLab` (AceAddon, AceEvent, AceConsole). Datenbank: `BugLab.db` (AceDB, SavedVariable `BugLabSettings`).
 
-## API (Stand 0.1.47-alpha.1)
+## API (Stand 0.1.48-beta.1)
 Console-API ausführlich: `CONSOLE_API.md`, Probe-API: `PROBE_API.md`.
 
 | Funktion | Beschreibung |

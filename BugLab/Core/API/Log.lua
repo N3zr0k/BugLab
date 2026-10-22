@@ -303,7 +303,7 @@ local function PaintSegment(text, color)
     if body == "" then return text end
     -- Überschrift: kurzer Text vor dem ersten Doppelpunkt, nur wenn kein Escape davor steht.
     local head, rest = body:match("^([^:|]-:)(.*)$")
-    local inner = body
+    local inner
     if head and #head <= 28 then
         local bright = Lighten(color)
         inner = "|cff" .. bright .. head .. "|r|cff" .. color .. rest:gsub("|r", "|r|cff" .. color)
