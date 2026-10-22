@@ -402,8 +402,10 @@ function Inspector:ApplyField(key, text, target)
 end
 
 -- Schreibgeschütztes, scrollbares Textfeld (mit der Maus markierbar, Strg+C kopiert; beim Anklicken wird alles markiert).
+-- Mit highlight = true wird der Inhalt als Lua-Code gefärbt angezeigt; zum Markieren und Kopieren (Anklicken) zeigt das Feld
+-- den reinen Text ohne Farbcodes und färbt wieder, sobald es den Fokus verliert.
 -- Gibt den ScrollFrame (vom Aufrufer zu verankern) und die Funktion zum Setzen des Inhalts zurück.
-local function CreateTextArea(parent)
+local function CreateTextArea(parent, highlight)
     local scroll = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
     local text = CreateFrame("EditBox", nil, scroll)
     text:SetMultiLine(true)
@@ -412,16 +414,30 @@ local function CreateTextArea(parent)
     BugLab:HookReloadKey(text)
     text:SetWidth(scroll:GetWidth() or 400)
     text.content = ""
+    -- Was das Feld gerade zeigt: gefärbt oder (mit Fokus) rein.
+    local function Shown(edit)
+        if highlight and not edit.focused then return BugLab:HighlightLua(edit.content) end
+        return edit.content
+    end
     text:SetScript("OnTextChanged", function(edit, byUser)
-        if byUser then edit:SetText(edit.content) end
+        if byUser then edit:SetText(Shown(edit)) end
     end)
-    text:SetScript("OnEditFocusGained", function(edit) edit:HighlightText() end)
+    text:SetScript("OnEditFocusGained", function(edit)
+        edit.focused = true
+        if highlight then edit:SetText(edit.content) end
+        edit:HighlightText()
+    end)
+    text:SetScript("OnEditFocusLost", function(edit)
+        edit.focused = false
+        edit:HighlightText(0, 0)
+        if highlight then edit:SetText(Shown(edit)) end
+    end)
     text:SetScript("OnEscapePressed", function(edit) edit:ClearFocus() end)
     scroll:SetScript("OnSizeChanged", function(_, width) text:SetWidth(width) end)
     scroll:SetScrollChild(text)
     return scroll, function(content)
         text.content = content
-        text:SetText(content)
+        text:SetText(Shown(text))
         scroll:SetVerticalScroll(0)
     end
 end
@@ -486,7 +502,7 @@ function Inspector:BuildPopup()
     frame:SetScript("OnMouseWheel", function(_, delta) self:MoveLayer(-delta, true) end)
 
     -- Lua-Code des Elements zum Kopieren (anklicken markiert alles, dann Strg+C).
-    local code, SetCode = CreateTextArea(frame)
+    local code, SetCode = CreateTextArea(frame, true)
     code:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -128)
     code:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -34, 48)
     frame.SetCode = SetCode

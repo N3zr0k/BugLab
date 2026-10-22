@@ -1,16 +1,16 @@
-MIT License
+All Rights Reserved
 
 Copyright (c) 2026 N3zr0k
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+All rights to BugLab (the source code, the artwork and the documentation in this
+repository, except for the third-party libraries named below) are reserved.
+No permission is granted to copy, modify, merge, publish, distribute,
+sublicense or sell this work without the prior written permission of the
+copyright holder. Using the unmodified addon in World of Warcraft for personal,
+non-commercial purposes is permitted.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Third-party libraries (Ace3, LibStub, CallbackHandler) are included under their
+own licenses (see the headers of the library files) and are not covered by this notice.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,

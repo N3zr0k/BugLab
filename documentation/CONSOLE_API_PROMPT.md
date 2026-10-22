@@ -19,6 +19,7 @@ end
 4. Tabellen ausgeben mit `log:Dump(tabelle, "Beschriftung")` (optional `level`, `{ depth = 3, maxLines = 100 }`).
 5. Zähle keine Zeilen selbst: BugLab drosselt automatisch (Standard 30 Zeilen pro Sekunde und Quelle). Logge trotzdem nicht in jedem Frame (`OnUpdate`).
 6. Die Mindeststufe lässt sich mit `log:SetLevel("WARN")` anheben und der Logger mit `log:SetEnabled(false)` abschalten, z. B. passend zur Debug-Option des Addons.
-7. Eigene Chat-Ausgaben des Addons nicht ändern, nur Debug- und Fehlermeldungen umleiten.
+7. Optional: Namen und Farben des Addons selbst wählen, indem `BugLab:GetLogger("MeinAddon", { name = "MeinAddon", nameColor = "rrggbb", colors = { "rrggbb", ... }, levelColors = { WARN = "rrggbb" } })` einen Stil mitgibt (Schreibweise des Namens, Palette für getrennte Werte, Stufenfarben). Alles ist optional; ohne Angabe gelten BugLabs Farben.
+8. Eigene Chat-Ausgaben des Addons nicht ändern, nur Debug- und Fehlermeldungen umleiten.
 
-Schreibe kein eigenes Logging-System, sondern nur diese API: `BugLab:GetLogger(name)`, `log:Announce`, `log:Debug/Info/Warn/Error/Fatal`, `log:Dump`, `log:SetLevel`, `log:SetEnabled`. Die vollständige Beschreibung steht in `documentation/CONSOLE_API.md` von BugLab.
+Schreibe kein eigenes Logging-System, sondern nur diese API: `BugLab:GetLogger(name)`, `log:Announce`, `log:Debug/Info/Warn/Error/Fatal`, `log:Dump`, `log:SetLevel`, `log:SetEnabled`, `log:SetStyle`. Die vollständige Beschreibung steht in `documentation/CONSOLE_API.md` von BugLab.

@@ -5,7 +5,7 @@
 - Version und Infos werden aus der TOC gelesen (`BugLab:GetMeta(field)`).
 - Globales Addon-Objekt: `BugLab` (AceAddon, AceEvent, AceConsole). Datenbank: `BugLab.db` (AceDB, SavedVariable `BugLabSettings`).
 
-## API (Stand 0.1.42-alpha.1)
+## API (Stand 0.1.47-alpha.1)
 Console-API ausführlich: `CONSOLE_API.md`, Probe-API: `PROBE_API.md`.
 
 | Funktion | Beschreibung |
@@ -16,7 +16,7 @@ Console-API ausführlich: `CONSOLE_API.md`, Probe-API: `PROBE_API.md`.
 | `BugLab:OpenOptions()` | Einstellungen öffnen |
 | `BugLab:ShowWindow()`, `HideWindow()`, `ToggleWindow()` | Hauptfenster steuern (`Core/API/Window.lua`) |
 | `BugLab:SetMinimapButtonShown(bool)` | Minimap-Button (LibDBIcon, Name `BugLab`, Standardrahmen entsättigt) ein- oder ausblenden (`Core/Launcher/Minimap.lua`) |
-| `BugLab:GetPage(name)` | leerer Container (Frame) des Modulreiters (`Console`, `Inspector`, `Gallery`, `Probe`), hier baut das Modul seine Oberfläche |
+| `BugLab:GetPage(name)` | leerer Container (Frame) des Modulreiters (`Console`, `Inspector`, `Gallery`, `Probe`, `Database`), hier baut das Modul seine Oberfläche |
 | `BugLab:IsBugSackAvailable()`, `OpenBugSack()`, `GetBugSackCount()` | optionale Anbindung an BugSack/BugGrabber (`Core/Integrations/BugSack.lua`) |
 | `BugLab:Log(source, text, level)` | meldet eine Zeile an die Console (Historie plus Chatfenster); `source` = Modul- oder Addonname, auch aus fremden Addons nutzbar; `level` = `"DEBUG"`, `"INFO"` (Standard), `"WARN"`, `"ERROR"` oder `"FATAL"` (`Core/API/Log.lua`) |
 | `BugLab:GetLogger(source)` | Logger je Addon (gleicher Name = gleiches Objekt): `log:Debug/Info/Warn/Error/Fatal(fmt, ...)`, `log:Dump(wert, label, level, opts)`, `log:SetLevel(level)`, `log:SetEnabled(bool)` (`Core/API/Log.lua`) |
@@ -41,7 +41,7 @@ Console-API ausführlich: `CONSOLE_API.md`, Probe-API: `PROBE_API.md`.
 | `BugLab.COLORS`, `BugLab.NAME_COLORED`, `BugLab.MEDIA_PATH` | zentrale Palette, Namens-String, Medienpfad |
 
 ## Module
-Interne Module liegen je in einem eigenen Ordner unter `BugLab/Modules/` (Console, Inspector, Gallery, Probe) und werden in `Modules/Modules.xml` eingetragen. Externe Module als eigenes Addon folgen mit der Modul-Schnittstelle.
+Interne Module liegen je in einem eigenen Ordner unter `BugLab/Modules/` (Console, Inspector, Gallery, Probe, Database) und werden in `Modules/Modules.xml` eingetragen. Externe Module als eigenes Addon folgen mit der Modul-Schnittstelle.
 
 ## Tests ohne Spielclient
 `pip install lupa && python3 -I tests/run_addon.py` lädt das Addon in einer simulierten WoW-Umgebung (Lua 5.1), prüft Ladereihenfolge, Lifecycle, Optionstabelle, Slash-Befehl und beide Locales. Die WoW-API ist nur gestubbt, das Rendering wird nicht geprüft.

@@ -66,7 +66,7 @@ function BugLab:ObjectOwner(obj)
     return "?"
 end
 
--- Gehört das Objekt dem Spiel? Dann nur Anzeige.
+-- Gehört das Objekt dem Spiel? Dann nur Anzeige, sofern die Option "Blizzard-Elemente ändern" aus ist.
 function BugLab:IsBlizzardObject(obj)
     local owner = self:ObjectOwner(obj)
     return owner == "Blizzard" or owner:find("^Blizzard_") ~= nil
@@ -174,7 +174,7 @@ end
 
 -- Änderbar? Gibt true oder false plus Locale-Schlüssel des Grundes zurück.
 function BugLab:CanEditObject(obj)
-    if self:IsBlizzardObject(obj) then return false, "INS_LOCKED_BLIZZARD" end
+    if self:IsBlizzardObject(obj) and not self.db.profile.inspectBlizzard then return false, "INS_LOCKED_BLIZZARD" end
     if Try(obj, "IsProtected") and InCombatLockdown and InCombatLockdown() then return false, "INS_LOCKED_COMBAT" end
     return true
 end

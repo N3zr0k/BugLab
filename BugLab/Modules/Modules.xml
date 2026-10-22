@@ -5,4 +5,5 @@
 	<Script file="Inspector\TextureEditor.lua"/>
 	<Script file="Gallery\Gallery.lua"/>
 	<Script file="Probe\Probe.lua"/>
+	<Script file="Database\Database.lua"/>
 </Ui>

@@ -437,12 +437,16 @@ def run(locale):
         out.texinfo = BugLab:DescribeObject(tex)
         out.tex, out.blend, out.coords = out.texinfo.texture, out.texinfo.blend, #out.texinfo.texCoord
         out.lines = table.concat(BugLab:FormatObjectInfo(info), " ") .. table.concat(BugLab:FormatObjectInfo(out.texinfo), " ")
+        BugLab.db.profile.inspectBlizzard = false
         out.editMine = BugLab:CanEditObject(mine)
         out.editBlizz = BugLab:CanEditObject(blizz)
         out.setX = BugLab:ApplyEdit(mine, "x", 40)
         out.x = mine.points[1][4]
         out.setW = BugLab:ApplyEdit(mine, "width", 222)
         out.refused = BugLab:ApplyEdit(blizz, "x", 1) == false
+        BugLab.db.profile.inspectBlizzard = true
+        out.blizzAllowed = BugLab:CanEditObject(blizz) == true
+        BugLab.db.profile.inspectBlizzard = false
         out.bad = BugLab:ApplyEdit(mine, "x", "abc") == false
         out.w2 = mine.w
         BugLab:ResetEdit(mine)
@@ -494,11 +498,12 @@ def run(locale):
         return out.name .. "|" .. out.type .. "|" .. out.owner .. "|" .. out.pts .. "|" .. tostring(out.editMine) .. "|"
             .. tostring(out.editBlizz) .. "|" .. out.x .. "|" .. out.w2 .. "|" .. out.xBack .. "|" .. out.wBack .. "|"
             .. tostring(out.refused) .. "|" .. tostring(out.bad) .. "|" .. out.tex .. "|" .. out.blend .. "|" .. out.coords
-            .. "|" .. out.under .. "|" .. out.owners .. "|" .. out.lines .. "|" .. out.code
+            .. "|" .. out.under .. "|" .. out.owners .. "|" .. out.lines .. "|" .. out.code .. "|" .. tostring(out.blizzAllowed)
     end''')
     r = insp().split("|")
     assert r[:15] == ["MeinFrame", "Frame", "MeinAddon", "1", "true", "false", "40", "222", "5", "100", "true", "true",
                       "Interface\\Foo\\Bar", "ADD", "8"], r[:15]
+    assert r[-1] == "true", "Option inspectBlizzard erlaubt Blizzard-Frames nicht"
     assert r[15] == "FrameB,MeinFrame,MeinFrame.<Texture>" or r[15].startswith("FrameB,MeinFrame,"), r[15]
     assert r[16] == "MeinAddon,?,BugLab;Interface\\Foo\\Bar", r[16]
     detail = "|".join(r[17:])
@@ -543,8 +548,96 @@ def run(locale):
     n = len(g.CHAT)
     assert n >= 3 and any("/bl|r" in v for v in g.CHAT.values()) and any("/buglab pick" in v for v in g.CHAT.values()), list(g.CHAT.values())
     assert g.SlashCmdList["ACECONSOLE_BL"] is not None and g.SlashCmdList["ACECONSOLE_BUGLAB"] is not None
+    # Addon-Stil: eigene Schreibweise, Namensfarbe, Palette und Stufenfarben; ohne Angabe gelten BugLabs Werte.
+    lua.execute("""
+        BugLab:GetLogger("StyleAddon:Teil", { name = "Style|Addon", nameColor = "#FF8800", colors = { "ff0000", "00ff00", "kaputt" }, levelColors = { warn = "|cff123456" } })
+        BugLab:SetAddonStyle("LeerAddon", { colors = { "xyz" }, nameColor = 5 })
+    """)
+    assert lua.eval('BugLab:GetAddonStyle("StyleAddon:x").name') == "Style|Addon"
+    assert lua.eval('BugLab:GetAddonStyle("LeerAddon")') is None
+    src = lua.eval('BugLab:FormatSource("StyleAddon:Teil")')
+    assert "|cffff8800Style||Addon|r" in src and ":Teil" in src, src
+    assert "|cff66bbffLeerAddon" in lua.eval('BugLab:FormatSource("LeerAddon")') or "LeerAddon" in lua.eval('BugLab:FormatSource("LeerAddon")')
+    out = lua.eval('BugLab:FormatEntry({ t = 0, s = "StyleAddon:Teil", m = "a; b", l = 2 })')
+    assert "|cffff0000" in out and "|cff00ff00" in out and "61afef" not in out, out
+    out = lua.eval('BugLab:FormatEntry({ t = 0, s = "StyleAddon:Teil", m = "warnung", l = 3 })')
+    assert "|cff123456warnung|r" in out, out
+    out = lua.eval('BugLab:FormatEntry({ t = 0, s = "Anderes", m = "a; b", l = 2 })')
+    assert "61afef" in out, out
+    lua.execute('BugLab:SetAddonStyle("StyleAddon", nil)')
+    assert lua.eval('BugLab:GetAddonStyle("StyleAddon")') is None
+    # Lua-Syntaxfärbung: Schlüsselwörter, Strings, Zahlen, Kommentare, Aufrufe; "|" wird verdoppelt; Zeichen bleiben erhalten.
+    lua.execute("HL = BugLab:HighlightLua('local x = 5 -- Zahl\\nprint(\"a|b\", x) return nil [[l\\nang]]')")
+    hl = lua.eval("HL")
+    assert "|cffff7b72local|r" in hl and "|cffb5cea85|r" in hl and "|cff8b949e-- Zahl|r" in hl, hl
+    assert "|cffdcdcaaprint|r" in hl and "|cffa5d6ff\"a||b\"|r" in hl and "|cffc586c0return|r" in hl and "|cff569cd6nil|r" in hl, hl
+    lua.execute('HL2 = BugLab:HighlightLua([[local function Foo(a) return CreateFrame("F") or ns.Bar.baz end]])')
+    hl2 = lua.eval("HL2")
+    assert "|cffd2a8ffFoo|r" in hl2 and "|cffffa657CreateFrame|r" in hl2 and "|cff4ec9b0Bar|r" in hl2 and " or " in hl2, hl2
+    assert lua.eval("BugLab:HighlightLua('')") == "" and lua.eval("BugLab:HighlightLua('x = \"offen')") != ""
+    assert re.sub(r"\|c[0-9a-f]{8}|\|r", "", hl).replace("||", "|") == 'local x = 5 -- Zahl\nprint("a|b", x) return nil [[l\nang]]', hl
+    # Datenbank-Browser: Addons mit SavedVariables, Baum, Suche, Lua-Text, Zyklen.
+    lua.execute("""
+        C_AddOns = C_AddOns or {}
+        C_AddOns.GetNumAddOns = function() return 2 end
+        C_AddOns.GetAddOnInfo = function(i) return i == 1 and "DbTest" or "Leer" end
+        C_AddOns.IsAddOnLoaded = function() return true end
+        C_AddOns.GetAddOnMetadata = function(name, field)
+            if name == "DbTest" and field == "SavedVariables" then return "DbTestDB, DbTestOther" end
+        end
+        DbTestDB = { profiles = { Default = { scale = 1.5, name = "a|cffff0000b", list = { 3, 1, 2 } } }, global = {}, [5] = true }
+        DbTestDB.self = DbTestDB
+    """)
+    lua.execute('D = BugLab:GetModule("Database")')
+    assert lua.eval('table.concat(D:GetAddons(), ",")') == "DbTest"
+    assert lua.eval('table.concat(D:GetVariables("DbTest"), ",")') == "DbTestDB,DbTestOther"
+    lua.execute('D:OnShow()')
+    assert lua.eval('D.state.addon') == "DbTest"
+    # beim Wählen ist die Variable aufgeklappt: DbTestDB + Kinder (global, profiles, self, [5])
+    assert lua.eval('#D.view.list') == 5, lua.eval('#D.view.list')
+    lua.execute('D.state.expanded["DbTestDB.profiles"] = true; D.state.expanded["DbTestDB.profiles.Default"] = true; D.state.expanded["DbTestDB.self"] = true; D:Refresh()')
+    assert lua.eval('#D.view.list') > 8
+    assert lua.eval('D:RowText({key="x", value="a|cffff0000b", path="x", depth=0})').count("||cffff0000") == 1
+    lua.execute('D.state.selected = "DbTestDB.profiles.Default"; D:Refresh()')
+    text = lua.eval('D:SerializeEntry("DbTestDB.profiles.Default", DbTestDB.profiles.Default)')
+    assert text.startswith("DbTestDB.profiles.Default = {") and "scale = 1.5," in text and "list = {" in text, text
+    lua.execute('DbTestDB.profiles.Default.fn = function() end; DbTestDB.profiles.Default[print] = 1; DbTestDB.profiles.Default.ud = io and io.stdout')
+    assert "fn" not in lua.eval('D:SerializeEntry("x", DbTestDB.profiles.Default)') and lua.eval('D.ValueText(DbTestDB.profiles.Default)') == "{3}", lua.eval('D.ValueText(DbTestDB.profiles.Default)')
+    assert "Zyklus" in lua.eval('D:SerializeEntry("DbTestDB", DbTestDB)')
+    lua.execute('D.state.search = "scale"; D:Refresh()')
+    assert lua.eval('#D.view.list') == 4, lua.eval('#D.view.list')
+    lua.execute('D.state.search = "gibtesnicht"; D:Refresh()')
+    assert lua.eval('#D.view.list') == 0
+    # Ohne TOC-Angabe: Tabellen mit Addonnamen + üblicher Endung werden gefunden, Frames ([0]) nicht.
+    lua.execute("""
+        C_AddOns.GetAddOnInfo = function(i) return i == 1 and { name = "DbTest" } or "Leer" end
+        C_AddOns.GetAddOnMetadata = function() return nil end
+        DbTestSettings = { a = 1 }; DbTestAreasX = { 1 }; DbTestFrame = { [0] = {} }; DbTestWindow = { 1 }; DbTestLeer = {}
+        D.varCache = {}
+    """)
+    assert lua.eval('table.concat(D:GetVariables("DbTest"), ",")') == "DbTestAreasX,DbTestDB,DbTestSettings", lua.eval('table.concat(D:GetVariables("DbTest"), ",")')
+    # Mitschneiden: neue Tabellen zwischen zwei ADDON_LOADED gehören zum gerade geladenen Addon (auch ohne Namensbezug).
+    lua.execute("""
+        D:OnAddonLoaded("Davor")
+        CapturedAreas = { 1, 2 }; CapturedFrame = { 1 }; CapturedEmpty = {}; CapturedStr = "x"
+        D:OnAddonLoaded("Captured")
+        C_AddOns.GetAddOnInfo = function(i) return i == 1 and "DbTest" or "Captured" end
+        C_AddOns.GetNumAddOns = function() return 2 end
+        D.varCache = {}
+    """)
+    assert lua.eval('table.concat(D.captured["Captured"], ",")') == "CapturedAreas", lua.eval('table.concat(D.captured["Captured"] or {}, ",")')
+    assert lua.eval('table.concat(D:GetVariables("Captured"), ",")') == "CapturedAreas"
+    # Manuell: nur vorhandene Tabellen, bleibt gemerkt, lässt sich entfernen.
+    lua.execute('ManualOne = { a = 1 }')
+    assert lua.eval('D:AddManualVariable("Captured", "ManualOne")') is True
+    assert lua.eval('table.concat(D:GetVariables("Captured"), ",")') == "CapturedAreas,ManualOne"
+    assert lua.eval('table.concat(D:GetLoadedAddons(false), ",")') == "Captured,DbTest"
+    lua.execute('D:SelectAddon("Captured"); D.view.addBox.GetText = function() return "GibtEsNicht, ManualOne" end; D:OnAddClicked(); D.state.selected = "ManualOne"; D:OnRemoveClicked()')
+    assert lua.eval('table.concat(D:GetVariables("Captured"), ",")') == "CapturedAreas"
+    lua.execute('D:OnShow(); D:SelectAddon("DbTest")')
+    lua.execute('D.state.search = ""; D:OnRowClick(D.view.list and {path="DbTestDB.global", value=DbTestDB.global}); D:SelectAddon(nil)')
     vis = lua.eval('function() BugLab:SetModuleEnabled("Probe", false); return table.concat(BugLab:GetVisibleModules(), ",") end')()
-    assert vis == "Console,Inspector,Gallery", vis
+    assert vis == "Console,Inspector,Gallery,Database", vis
     assert g.BugLab.window.selected == "Console", g.BugLab.window.selected
     lua.execute('BugLab:SetModuleEnabled("Probe", true)'), "Slash-Befehl öffnet die Einstellungen nicht"
     assert g.BugLab.db.profile.debug is False

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.47-alpha.1
+- Inspector: Blizzard UI elements (micro menu, bag icons ...) can now be moved and resized like your own frames, so the "Changes" view gives the right position and size code. New option "Change Blizzard elements in the Inspector" (on by default; switch it off if actions get blocked). Protected elements stay locked in combat; changes last until /reload.
+
+## 0.1.46-alpha.1
+- Database: BugLab records new global tables at each ADDON_LOADED. They count as saved variables of the addon that just loaded, even with unrelated names. Works for addons that load after BugLab; earlier ones still use the name search.
+- Database: add a variable by hand (field "Variable name" + "Add", "Remove" for the selected manually added variable). The client does not reveal `## SavedVariables` names, so BugLab remembers them per addon. The dropdown has a submenu "All addons" for addons without a found variable.
+- Database: the fallback search finds every global data table whose name starts with the addon name (GlimpseDB, GlimpseCharDB, Glimpse_Areas ...), not only names with DB/Settings endings. The addon object itself, frames, mixins, templates, locales and empty tables are skipped.
+
+## 0.1.45-alpha.1
+- Database: the fallback search no longer lists the addon's own object (a global named exactly like the addon); only names with a data ending are guessed.
+- Database: only plain data is shown: functions, userdata and frames are hidden (also in counters, search and the Lua text).
+- Lua syntax highlighting (`BugLab:HighlightLua`) in the Database detail, the Inspector code popup and the Texture editor code: colors taken from the editor theme Sven provided (local, other keywords, strings, numbers, comments, nil/true/false, calls and globals, table fields, function names, braces). Clicking the field (to select and copy) shows the plain text without color codes; it is colored again when the field loses focus.
+- Window: the Database tab icon is 46x46 (the other tabs stay at 50x50).
+- Database: vertical split: the tree on the left, the selected entry as Lua text on the right (about 42 % of the width) with a divider line.
+
+## 0.1.44-alpha.1
+- Documentation: icon image for the Database module added to documentation/assets.
+- Console API: addons can pass their own style (`BugLab:GetLogger(name, { name, nameColor, colors, levelColors })` or `log:SetStyle`): name in the addon's own spelling and color, palette for separated values and level colors. Without it BugLab's colors apply. Documented in CONSOLE_API.md and the prompt.
+- License changed from MIT to All Rights Reserved (LICENSE, TOC, README); bundled libraries keep their own licenses.
+- Database: if the client does not report an addon's `## SavedVariables` from the TOC, BugLab now finds global tables named like the addon plus a common ending (DB, Settings, Saved, Options, Config, Data ...); frames are skipped. Addon info given as a table is handled too.
+
+## 0.1.43-alpha.1
+- New module Database (read only): shows the saved variables of loaded addons (names from the TOC) as an expandable tree with key, type and value. Search over keys and values, "Refresh" button, and the selected entry with all sub-branches as Lua text to copy. Shows the state in memory; the file is written on /reload or logout.
+
 ## 0.1.42-alpha.1
 - Window: the BugSack icon turns red immediately: while the window is open BugLab also checks the error count every quarter second, in addition to BugGrabber's callbacks.
 - Probe: a parameter of type `color` gets a color swatch in front of the field; a click opens the game's color picker and writes the hex value (rrggbb) into the field.

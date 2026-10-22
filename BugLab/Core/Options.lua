@@ -80,6 +80,12 @@ local function GetOptions()
                         get = function() return BugLab.db.profile.chatFontSize.probe end,
                         set = function(_, v) BugLab:SetChatFontSize("probe", v) end,
                     },
+                    inspectBlizzard = {
+                        type = "toggle", order = 8, width = "full",
+                        name = L["OPT_INSPECT_BLIZZARD"], desc = L["OPT_INSPECT_BLIZZARD_DESC"],
+                        get = function() return BugLab.db.profile.inspectBlizzard end,
+                        set = function(_, v) BugLab.db.profile.inspectBlizzard = v end,
+                    },
                     minimap = {
                         type = "toggle", order = 2, width = "full",
                         name = L["OPT_MINIMAP"], desc = L["OPT_MINIMAP_DESC"],

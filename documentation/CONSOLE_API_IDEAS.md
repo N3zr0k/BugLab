@@ -1,6 +1,6 @@
 # Console-API: offene Ideen und Optionen zur Diskussion
 
-Stand 0.1.42-alpha.1. Eingebaut sind: Logger pro Addon, Werte in Blau, Dump, Drosselung. Dieses Dokument erklärt die übrigen Ideen und die Optionstabelle `opts`, damit wir darüber entscheiden können.
+Stand 0.1.47-alpha.1. Eingebaut sind: Logger pro Addon, Werte in Blau, Dump, Drosselung. Dieses Dokument erklärt die übrigen Ideen und die Optionstabelle `opts`, damit wir darüber entscheiden können.
 
 ## Offene Ideen
 

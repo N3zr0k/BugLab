@@ -49,7 +49,10 @@ local MODULE_ICONS = {
     Inspector = "BugLab_Inspector_128",
     Gallery = "BugLab_Gallery_128",
     Probe = "BugLab_Probe_128",
+    Database = "BugLab_Database_128",
 }
+-- Reitersymbole, die kleiner als SIDETAB.iconExtent sein sollen (das Datenbank-Bild füllt seine Fläche fast ganz).
+local MODULE_ICON_SIZE = { Database = 46 }
 
 local function Fill(frame, layer, r, g, b, a)
     local tex = frame:CreateTexture(nil, layer)
@@ -117,7 +120,8 @@ local function BuildSideTab(tab, info, name)
     local icon = tab:CreateTexture(nil, "ARTWORK")
     icon:SetTexture(BugLab.MEDIA_PATH .. MODULE_ICONS[name])
     icon:SetTexCoord(0.03125, 0.96875, 0.03125, 0.96875)
-    icon:SetSize(SIDETAB.iconExtent, SIDETAB.iconExtent)
+    local extent = MODULE_ICON_SIZE[name] or SIDETAB.iconExtent
+    icon:SetSize(extent, extent)
     icon:SetPoint("CENTER", SIDETAB.iconOffsetX, 0)
     tab.icon = icon
 

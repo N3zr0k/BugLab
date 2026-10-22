@@ -18,7 +18,8 @@ Untermodule: Quelle `"MeinAddon:Kampf"` zeigt `{Käfer MeinAddon:Kampf}` (Modult
 | Aufruf | Wirkung |
 |---|---|
 | `BugLab:Log(source, text, level)` | einzelne Zeile; `level` = `"DEBUG"`, `"INFO"` (Standard), `"WARN"`, `"ERROR"`, `"FATAL"` |
-| `BugLab:GetLogger(source)` | Logger je Quelle (gleicher Name = gleiches Objekt) |
+| `BugLab:GetLogger(source, style)` | Logger je Quelle (gleicher Name = gleiches Objekt); `style` ist optional, siehe „Eigener Stil“ |
+| `log:SetStyle(style)`, `BugLab:SetAddonStyle(addon, style)` | Schreibweise und Farben des Addons festlegen; `nil` setzt zurück |
 | `log:Debug/Info/Warn/Error/Fatal(fmt, ...)` | wie `string.format`; Werte in Blau |
 | `log:Dump(wert, label, level, opts)` | Tabelle eingerückt; `opts.depth` (3), `opts.maxLines` (100), Zyklenschutz |
 | `log:Announce({ version, debug })` | Anmeldung: einmal pro Sitzung eine Debug-Zeile „Angemeldet, Version X, Debug aktiviert/deaktiviert“; ohne `version` wird sie aus der TOC (`## Version`) gelesen. Empfohlen beim Start jedes Addons (z. B. in `PLAYER_LOGIN`) |
@@ -33,6 +34,21 @@ Debug `#999999`, Info ungefärbt, Warn `#FFD100`, Error `#FF4040`, Fatal `#FF1A1
 
 ## Getrennte Werte
 Texte mit `|` oder `;` als Trenner (`"Version: 1.2 | Debug: an; Zone: Elwynn"`) werden abschnittsweise reihum eingefärbt (Blau, Grün, Gelb, Lila, Türkis, Orange, Rot), die Überschrift vor dem ersten Doppelpunkt etwas heller. Ein `|` zählt nur als Trenner, wenn es kein Escape des Spiels einleitet (`|c`, `|r`, `|T`, `|H`); `||` ist ein echtes `|`. Error und Fatal behalten ihre rote Farbe.
+
+## Eigener Stil (Name und Farben)
+Ein Addon kann seinen Namen in der eigenen Schreibweise und die Farben seiner Zeilen selbst bestimmen. Alles ist optional; was fehlt, übernimmt BugLab (Name weiß/blau, Palette wie oben, Stufenfarben wie oben).
+```lua
+local log = BugLab and BugLab:GetLogger("MeinAddon", {
+    name = "MeinAddon",                       -- Schreibweise im Log (Quelle und Filter bleiben "MeinAddon")
+    nameColor = "ff8800",                     -- Farbe des Namens
+    colors = { "ff8800", "33cc99", "5599ff" },-- Palette für getrennte Werte (reihum)
+    levelColors = { WARN = "ffaa00", ERROR = "ff2020" }, -- DEBUG, INFO, WARN, ERROR, FATAL
+})
+```
+- Farben als `"rrggbb"`, `"#rrggbb"` oder `"|cffrrggbb"`; ungültige Angaben werden ignoriert.
+- Der Stil gilt für alle Quellen des Addons (`"MeinAddon"` und `"MeinAddon:Kampf"`) und auch für dessen Probe-Ausgaben.
+- Zum Zeitpunkt der Darstellung angewendet: später gesetzte Stile färben auch ältere Zeilen der Historie um.
+- Mit `levelColors.INFO` lassen sich auch Info-Zeilen einfärben. Error und Fatal behalten ihre Stufenfarbe, wenn der Stil keine eigene setzt.
 
 ## Drosselung
 Höchstens `logRateLimit` Zeilen pro Sekunde und Quelle (Standard 30, 0 = aus). Überzählige Zeilen werden verworfen, danach folgt eine Warnung mit der Anzahl. Dump-Zeilen werden nicht gedrosselt.

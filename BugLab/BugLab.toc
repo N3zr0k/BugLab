@@ -1,15 +1,15 @@
 ## Interface: 16001
 ## Title: |cff808080{|r|cffffffffBug|r|cff66bbffLab|r|cff808080}|r
-## Notes: Debugging- und Analysewerkzeug für Addon-Entwickler (Console, Inspector, Probe).
-## Notes-enUS: Debugging and analysis toolkit for addon developers (Console, Inspector, Probe).
+## Notes: Debugging- und Analysewerkzeug für Addon-Entwickler (Console, Inspector, Gallery, Probe, Database).
+## Notes-enUS: Debugging and analysis toolkit for addon developers (Console, Inspector, Gallery, Probe, Database).
 ## Category: Development Tools
 ## Category-deDE: Entwicklungstools
 ## X-Category: Development Tools
 ## Author: N3zr0k
-## Version: 0.1.42-alpha.1
+## Version: 0.1.47-alpha.1
 ## IconTexture: Interface\AddOns\BugLab\Media\BugLab_Logo_RoundedCorners_128
 ## SavedVariables: BugLabSettings
-## X-License: MIT
+## X-License: All Rights Reserved
 ## X-Website: https://github.com/N3zr0k/BugLab
 ## X-Credits:
 ## X-Curse-Project-ID: 1755124

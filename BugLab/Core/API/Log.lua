@@ -90,15 +90,55 @@ local Logger = {}
 Logger.__index = Logger
 BugLab.loggers = {}
 
-function BugLab:GetLogger(source)
+function BugLab:GetLogger(source, style)
     source = tostring(source)
     local logger = self.loggers[source]
     if not logger then
         logger = setmetatable({ source = source, minLevel = 1, enabled = true }, Logger)
         self.loggers[source] = logger
     end
+    if style then logger:SetStyle(style) end
     return logger
 end
+
+-- Darstellung je Addon (gilt für alle Quellen "Addon" und "Addon:Teil", auch für Probes). Ohne Angabe gelten BugLabs
+-- Namensfarbe, Abschnittspalette und Stufenfarben. style = {
+--   name = "MeinAddon" (Schreibweise im Log), nameColor = "rrggbb",
+--   colors = { "rrggbb", ... } (Palette für getrennte Werte), levelColors = { WARN = "rrggbb", ... } }
+-- Farben als "rrggbb", "#rrggbb" oder "|cffrrggbb"; ungültige Angaben werden ignoriert.
+BugLab.styles = {}
+
+local function CleanHex(value)
+    local hex = tostring(value or ""):match("(%x%x%x%x%x%x)$")
+    return hex and hex:lower() or nil
+end
+
+function BugLab:SetAddonStyle(addon, style)
+    addon = tostring(addon):match("^[^:]+")
+    if not addon then return nil end
+    local out = {}
+    if type(style) == "table" then
+        if type(style.name) == "string" and style.name ~= "" then out.name = style.name end
+        out.nameColor = CleanHex(style.nameColor)
+        if type(style.colors) == "table" then
+            local palette = {}
+            for _, color in ipairs(style.colors) do palette[#palette + 1] = CleanHex(color) end
+            if #palette > 0 then out.colors = palette end
+        end
+        if type(style.levelColors) == "table" then
+            out.levelColors = {}
+            for level, color in pairs(style.levelColors) do out.levelColors[tostring(level):upper()] = CleanHex(color) end
+        end
+    end
+    self.styles[addon] = (next(out) ~= nil) and out or nil
+    return self.styles[addon]
+end
+
+function BugLab:GetAddonStyle(source)
+    return self.styles[tostring(source):match("^[^:]+") or ""]
+end
+
+function Logger:SetStyle(style) return BugLab:SetAddonStyle(self.source, style) end
 
 function Logger:Wants(level)
     return self.enabled and BugLab:LevelIndex(level) >= self.minLevel
@@ -222,9 +262,18 @@ end
 -- {Käfer Addon:Modul}: Klammern grau, Käfer weiß, Addonname BugLab-Blau (BugLab selbst wie im Fenstertitel: "Bug" weiß, "Lab" blau), Modul oder Erweiterung (":Modul") grau.
 function BugLab:FormatSource(name)
     local addon, module = name:match("^([^:]*)(:.*)$")
+    local style = self:GetAddonStyle(name)
+    local shown = (style and style.name or addon or name):gsub("|", "||")
+    local label
+    if style and (style.name or style.nameColor) then
+        label = style.nameColor and ("|cff" .. style.nameColor .. shown .. "|r") or self:Paint("BRIGHTBLUE", shown)
+    elseif (addon or name) == "BugLab" then
+        label = self:Paint("WHITE", "Bug") .. self:Paint("BRIGHTBLUE", "Lab")
+    else
+        label = self:Paint("BRIGHTBLUE", shown)
+    end
     return self:Paint("GRAY", "{") .. "|T" .. self.MEDIA_PATH .. "BugLab_Beetle_White_32:12:12|t"
-        .. ((addon or name) == "BugLab" and self:Paint("WHITE", "Bug") .. self:Paint("BRIGHTBLUE", "Lab")
-            or self:Paint("BRIGHTBLUE", addon or name)) .. (module and self:Paint("GRAY", module) or "") .. self:Paint("GRAY", "}")
+        .. label .. (module and self:Paint("GRAY", module) or "") .. self:Paint("GRAY", "}")
 end
 
 -- Stufe eines gespeicherten Eintrags (ältere Einträge ohne Stufe zählen als Info).
@@ -264,7 +313,8 @@ local function PaintSegment(text, color)
     return lead .. "|cff" .. color .. inner .. "|r"
 end
 
-function BugLab:ColorizeSegments(text)
+function BugLab:ColorizeSegments(text, palette)
+    palette = palette or SEGMENT_COLORS
     -- Vorhandene Farben (z. B. blaue Werte aus FormatMessage) würden die Abschnittsfarbe überdecken: zuerst entfernen.
     local original = text
     text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
@@ -284,7 +334,7 @@ function BugLab:ColorizeSegments(text)
     segments[#segments + 1] = text:sub(start)
     local out = {}
     for index, segment in ipairs(segments) do
-        out[#out + 1] = PaintSegment(segment, SEGMENT_COLORS[(index - 1) % #SEGMENT_COLORS + 1])
+        out[#out + 1] = PaintSegment(segment, palette[(index - 1) % #palette + 1])
         -- Ein "|" muss als "||" ausgegeben werden, sonst läse das Spiel das folgende "|r" als Text.
         if separators[index] then out[#out + 1] = "|cff808080" .. (separators[index] == "|" and "||" or separators[index]) .. "|r" end
     end
@@ -298,12 +348,14 @@ end
 
 -- [HH:MM:SS] {Käfer Name} Text, der Text in der Farbe der Stufe.
 function BugLab:FormatEntry(entry, hideTime)
-    local color = self.LEVEL_COLORS[self.LEVELS[self:EntryLevel(entry)]]
+    local style = self:GetAddonStyle(self:SourceKey(entry))
+    local levelName = self.LEVELS[self:EntryLevel(entry)]
+    local color = (style and style.levelColors and style.levelColors[levelName]) or self.LEVEL_COLORS[levelName]
     local text = entry.m
     -- Fehler und Fatal behalten ihre Stufenfarbe; sonst werden getrennte Werte reihum eingefärbt.
     local level = self:EntryLevel(entry)
     if level < self.LEVELS_ERROR_INDEX then
-        local colored = self:ColorizeSegments(text)
+        local colored = self:ColorizeSegments(text, style and style.colors)
         if colored ~= text then return self:EntryPrefix(entry, hideTime) .. colored end
     end
     if color then

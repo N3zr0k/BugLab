@@ -76,6 +76,8 @@ Das Addon braucht keinen eigenen Slash-Befehl für Probes.
 ## Probe-Log und Chat
 Das Probe-Log hat eine eigene Historie (Aufbewahrung wie die Console, Option `historyDays`). Im Reiter Console wählt das Auswahlfeld "Log" vor der Quelle zwischen **Debug-Log** und **Probe-Log**; Suche, Quelle, Stufe, Zeitraum und Löschen gelten jeweils für das gewählte Log. Im Chat gibt es die Reiter `BugLab:Debug` und `BugLab:Probes`.
 
+Name und Farben der Probe-Zeilen folgen dem Stil des Addons (`BugLab:GetLogger("MeinAddon", { name = ..., nameColor = ..., colors = ... })`, siehe `CONSOLE_API.md`); ohne Angabe gelten BugLabs Farben.
+
 ## Prompt für andere Addons
 Alles unter der Linie kann einer KI oder einem Entwickler mitgegeben werden.
 

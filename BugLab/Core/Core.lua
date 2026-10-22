@@ -28,19 +28,20 @@ BugLab.MEDIA_PATH = "Interface\\AddOns\\" .. ADDON_NAME .. "\\Media\\"
 BugLab.OPTIONS_NAME = "|T" .. BugLab.MEDIA_PATH .. "BugLab_Beetle_Outlined_32:16:16|t " .. BugLab.NAME_COLORED
 
 -- Reihenfolge = Anzeige in der Übersicht. Tabelle wird von den Modulen nicht verändert.
-BugLab.MODULES = { "Console", "Inspector", "Gallery", "Probe" }
+BugLab.MODULES = { "Console", "Inspector", "Gallery", "Probe", "Database" }
 
 local DB_DEFAULTS = {
     profile = {
         debug = false,
         reloadHotkey = true,
+        inspectBlizzard = true, -- Inspector darf auch Blizzard-Elemente verändern (Taint-Risiko, nur bis /reload)
         historyDays = 30, -- Aufbewahrung der Console-Historie
         logRateLimit = 30, -- Zeilen pro Sekunde und Quelle, 0 = keine Drosselung
         chatFontSize = { console = 12, probe = 12 }, -- Schriftgröße des BugLab-Chatfensters je Log
-        modules = { Console = true, Inspector = true, Gallery = true, Probe = true },
+        modules = { Console = true, Inspector = true, Gallery = true, Probe = true, Database = true },
         minimap = { hide = false, minimapPos = 180 }, -- Format von LibDBIcon
     },
-    global = { history = {}, probeHistory = {} }, -- Console- und Probe-Historie, profilübergreifend
+    global = { history = {}, probeHistory = {}, dbVars = {} }, -- Console- und Probe-Historie, profilübergreifend
 }
 
 -- Version und Infos kommen aus der TOC, nicht aus dem Code.

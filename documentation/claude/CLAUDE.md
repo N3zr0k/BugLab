@@ -46,7 +46,7 @@ Diese Datei gibt Claude Code Orientierung für die Arbeit in diesem Repository.
     - `<DEVELOPER.md>` – Entwickler-Doku im Ordner Docs/
     - `<API.md>` – API-Doku im Ordner Docs/
 - `documentation/assets/` – Ordner für Artwork, welches auf CurseForge, als Vorlage für TGAs oder in der ReadMe verwendet wird.
-- `LICENSE` – MIT Lizenz
+- `LICENSE` – All Rights Reserved
 - `.pkgmeta` 
 
 ## Versionierung & Dateien
@@ -58,7 +58,7 @@ Diese Datei gibt Claude Code Orientierung für die Arbeit in diesem Repository.
 - `alpha` → alpha, beta (wird nur von mir freigegeben und angesagt)
 - `N` → Repo (zählt mit jedem neuen Repo Zip hoch, wenn sich am Repo Ordner etwas ändert, GameOrdner ist ausgenommen)
 - Aufbau des Repo-ZIPs: ein Wurzelordner `BugLab/` mit dem gesamten Repo (README, CHANGELOG, `documentation/`, `tests/`, LICENSE, `.pkgmeta`) und darin der Addon-Ordner `BugLab/BugLab/`. Nichts liegt lose im Archiv-Root.
-- TOC-Vorgaben: `## SavedVariables: BugLabSettings`, `## Category: Development Tools` (nur deDE als Übersetzung), `## X-Curse-Project-ID: 1755124`, `## X-Website: https://github.com/N3zr0k/BugLab`, `## X-License: MIT`.
+- TOC-Vorgaben: `## SavedVariables: BugLabSettings`, `## Category: Development Tools` (nur deDE als Übersetzung), `## X-Curse-Project-ID: 1755124`, `## X-Website: https://github.com/N3zr0k/BugLab`, `## X-License: All Rights Reserved`.
 
 ## Befehle / Release
 - Lint: `<Lint-Befehl eintragen>`

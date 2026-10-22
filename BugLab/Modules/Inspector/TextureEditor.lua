@@ -301,7 +301,7 @@ function Inspector:BuildTextureEditor(root)
     view.maskY = Add(CreateField(editor, L["TEX_MASK_Y"], rx + 234, my - 42, 66, 1, function() return ed.maskY end, Num("maskY")))
 
     -- Lua-Code unten, zum Markieren und Kopieren.
-    local scroll, SetCode = BugLab.CreateTextArea(editor)
+    local scroll, SetCode = BugLab.CreateTextArea(editor, true)
     scroll:SetPoint("TOPLEFT", 8, -(PREVIEW_H + 52 + 84 + 36))
     scroll:SetPoint("TOPRIGHT", -28, -(PREVIEW_H + 52 + 84 + 36))
     scroll:SetHeight(120)
