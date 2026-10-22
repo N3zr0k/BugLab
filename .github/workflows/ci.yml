@@ -3,7 +3,7 @@
 #   alpha   -> GitHub-Prerelease, kein CurseForge
 #   beta    -> GitHub-Release (Beta) und CurseForge-Beta
 #   (keine) -> GitHub-Release und CurseForge-Release
-# Benötigt: Secret CURSEFORGE_API_TOKEN, Repository-Variable CURSEFORGE_GAME_VERSION_ID (Spielversions-ID der Forever-Beta).
+# Benötigt: Secret CF_API_KEY, Repository-Variable CURSEFORGE_GAME_VERSION_ID (Spielversions-ID der Forever-Beta).
 name: CI
 
 on:
@@ -116,7 +116,7 @@ jobs:
         with:
           name: addon-zip
       - env:
-          CURSEFORGE_API_TOKEN: ${{ secrets.CURSEFORGE_API_TOKEN }}
+          CURSEFORGE_API_TOKEN: ${{ secrets.CF_API_KEY }}
           GAME_VERSION_ID: ${{ vars.CURSEFORGE_GAME_VERSION_ID }}
         run: |
           test -n "$CURSEFORGE_API_TOKEN" && test -n "$GAME_VERSION_ID" || { echo "CurseForge-Zugangsdaten fehlen"; exit 1; }
