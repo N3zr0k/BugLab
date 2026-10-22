@@ -3,7 +3,9 @@
 #   alpha   -> GitHub-Prerelease, kein CurseForge
 #   beta    -> GitHub-Release (Beta) und CurseForge-Beta
 #   (keine) -> GitHub-Release und CurseForge-Release
-# Benötigt: Secret CF_API_KEY, Repository-Variable CURSEFORGE_GAME_VERSION_ID (Spielversions-ID der Forever-Beta).
+# Benötigt: nur das GitHub-Secret CF_API_KEY.
+# Spielversionen werden aus ## Interface in der BugLab.toc gelesen;
+# die passenden CurseForge-IDs ermittelt die Game Versions API beim Upload.
 name: CI
 
 on:
@@ -28,9 +30,10 @@ jobs:
     outputs:
       version: ${{ steps.toc.outputs.version }}
       stage: ${{ steps.toc.outputs.stage }}
+      game_versions: ${{ steps.toc.outputs.game_versions }}
     steps:
       - uses: actions/checkout@v4
-      # Die TOC ist die einzige Quelle der Version.
+      # Die TOC ist die einzige Quelle für Addon- und Client-Versionen.
       - id: toc
         run: |
           VERSION=$(sed -n 's/^## Version:[[:space:]]*//p' "$ADDON/$ADDON.toc" | tr -d '\r')
@@ -41,8 +44,31 @@ jobs:
             *-*)       echo "Unbekannte Stufe in $VERSION"; exit 1 ;;
             *)         STAGE=release ;;
           esac
+          # ## Interface: 16001 -> 1.60.1, 120105 -> 12.1.5 usw.
+          # Mehrere Interface-Nummern (Kommaliste) werden vollständig berücksichtigt.
+          INTERFACES=$(sed -nE 's/^##[[:space:]]*Interface[[:space:]]*:[[:space:]]*([^#]*).*/\1/p' "$ADDON/$ADDON.toc" | tr -d '[:space:]')
+          if [ -z "$INTERFACES" ]; then
+            echo "::error::## Interface fehlt in $ADDON/$ADDON.toc"
+            exit 1
+          fi
+          IFS=',' read -r -a IDS <<< "$INTERFACES"
+          VERSION_NAMES=()
+          for iface in "${IDS[@]}"; do
+            if ! [[ "$iface" =~ ^[0-9]{5,6}$ ]]; then
+              echo "::error::Ungültige Interface-Nummer in der TOC: $iface"
+              exit 1
+            fi
+            number=$((10#$iface))
+            major=$((number / 10000))
+            minor=$(((number % 10000) / 100))
+            patch=$((number % 100))
+            VERSION_NAMES+=("$major.$minor.$patch")
+          done
+          GAME_VERSION_NAMES=$(IFS=,; echo "${VERSION_NAMES[*]}")
+          echo "TOC Interfaces: $INTERFACES -> CurseForge-Spielversionen: $GAME_VERSION_NAMES"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
+          echo "game_versions=$GAME_VERSION_NAMES" >> "$GITHUB_OUTPUT"
 
   lint:
     runs-on: ubuntu-latest
@@ -123,6 +149,7 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
       STAGE: ${{ needs.version.outputs.stage }}
+      GAME_VERSION_NAMES: ${{ needs.version.outputs.game_versions }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -132,24 +159,41 @@ jobs:
       - name: Upload to CurseForge
         env:
           CURSEFORGE_API_TOKEN: ${{ secrets.CF_API_KEY }}
-          GAME_VERSION_ID: ${{ vars.CURSEFORGE_GAME_VERSION_ID }}
         run: |
           if [ -z "$CURSEFORGE_API_TOKEN" ]; then
             echo "::error::GitHub Secret CF_API_KEY fehlt"
             exit 1
           fi
-          if [ -z "$GAME_VERSION_ID" ]; then
-            echo "::error::GitHub Variable CURSEFORGE_GAME_VERSION_ID fehlt"
+          # CurseForge nutzt eigene IDs. Diese bei jedem Upload anhand der TOC-Versionen
+          # dynamisch auflösen, statt eine Repository-Variable vorauszusetzen.
+          curl --fail-with-body -sS --retry 3 \
+            --header "X-Api-Token: $CURSEFORGE_API_TOKEN" \
+            --output game-versions.json \
+            "https://wow.curseforge.com/api/game/versions"
+          if ! jq -e 'type == "array"' game-versions.json > /dev/null; then
+            echo "::error::CurseForge hat keine gültige Liste von Spielversionen geliefert"
             exit 1
           fi
-          if ! [[ "$GAME_VERSION_ID" =~ ^[0-9]+$ ]]; then
-            echo "::error::CURSEFORGE_GAME_VERSION_ID muss eine numerische ID sein"
+          RESOLVED=$(jq -c --arg names "$GAME_VERSION_NAMES" '
+            ($names | split(",") | unique) as $wanted |
+            [.[] | select(.name as $n | $wanted | index($n) != null) | {name, id}] as $matches |
+            {ids: ($matches | map(.id) | unique), missing: ($wanted - ($matches | map(.name)))}
+          ' game-versions.json)
+          MISSING=$(jq -r '.missing | join(", ")' <<< "$RESOLVED")
+          if [ -n "$MISSING" ]; then
+            echo "::error::Für folgende TOC-Spielversionen fehlt eine Zuordnung bei CurseForge: $MISSING"
             exit 1
           fi
+          GAME_VERSION_IDS=$(jq -c '.ids' <<< "$RESOLVED")
+          if [ "$GAME_VERSION_IDS" = '[]' ]; then
+            echo "::error::Keine CurseForge-Game-Version-ID gefunden"
+            exit 1
+          fi
+          echo "TOC-Spielversionen: $GAME_VERSION_NAMES -> CurseForge-IDs: $GAME_VERSION_IDS"
           NOTES=$(awk -v v="## $VERSION" '$0 ~ "^## " { p = ($0 == v) } p && $0 != v' CHANGELOG.md)
           TYPE=release; [ "$STAGE" = "beta" ] && TYPE=beta
-          jq -n --arg notes "$NOTES" --arg name "$ADDON $VERSION" --arg type "$TYPE" --argjson gv "$GAME_VERSION_ID" \
-            '{changelog:$notes, changelogType:"markdown", displayName:$name, gameVersions:[$gv], releaseType:$type}' > metadata.json
-          curl -fsS --request POST --header "X-Api-Token: $CURSEFORGE_API_TOKEN" \
+          jq -n --arg notes "$NOTES" --arg name "$ADDON $VERSION" --arg type "$TYPE" --argjson gv "$GAME_VERSION_IDS" \
+            '{changelog:$notes, changelogType:"markdown", displayName:$name, gameVersions:$gv, releaseType:$type}' > metadata.json
+          curl --fail-with-body -sS --retry 3 --request POST --header "X-Api-Token: $CURSEFORGE_API_TOKEN" \
                --form "metadata=<metadata.json" --form "file=@${ADDON}_${VERSION}.zip" \
                "https://wow.curseforge.com/api/projects/$CURSEFORGE_PROJECT_ID/upload-file"
