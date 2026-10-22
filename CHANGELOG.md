@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.48-beta.2
+- Tests: the version display test accepts alpha, beta and rc.
+
 ## 0.1.48-beta.1
 - Code: luacheck warning W311 fixed in Log.lua (unused initial value of `inner`).
 

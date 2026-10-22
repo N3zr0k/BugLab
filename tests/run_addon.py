@@ -193,7 +193,7 @@ def run(locale):
     assert not errs, "Lua-Fehler im Lifecycle:\n" + "\n".join(errs)
     # Versionsdarstellung: Stufe blau, Repo-Zähler grau.
     fv = lua.eval('function() return BugLab:FormatVersion() end')()
-    assert re.search(r"-\|r\|cff66bbffalpha\|r\|cff808080\.\d+\|r$", fv), fv
+    assert re.search(r"-\|r\|cff66bbff(?:alpha|beta|rc)\|r\|cff808080\.\d+\|r$", fv), fv
     # Tooltip: Hinweiszeile mit entsättigtem, blau eingefärbtem i-Symbol (Mock-Tooltip mit Namen).
     lua.execute("""
         MOCK_LINES = {}
